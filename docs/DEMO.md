@@ -22,7 +22,7 @@ Not building, so nobody starts on it:
 
 ## Pitch
 
-The agent making the deck reads `docs/PROBLEM.md`, `docs/SOLUTION.md`, this file and `docs/decisions/`.
+The agent making the deck reads `docs/PROBLEM.md`, `docs/SOLUTION.md`, this file and `../decisions/` (outside the repo).
 
 **Time limit:**
 

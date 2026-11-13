@@ -1,5 +1,5 @@
 ---
-name: Travel Starter
+name: Build My Holiday
 description: A mid-century travel poster, made for booking. Warm paper, navy ink, and colours that each have one job.
 colors:
   primary: '#24706b'
@@ -127,7 +127,7 @@ components:
     rounded: '{rounded.full}'
 ---
 
-# Design System: Travel Starter
+# Design System: Build My Holiday
 
 Every rule below says why. When a screen meets a case the rules don't cover, decide from the reason, not the letter.
 Tokens live in `apps/web/src/index.css`; the example screens in `apps/web/src/features/events` and
@@ -222,7 +222,7 @@ where. It comes from npm (`@fontsource-variable/bricolage-grotesque`, imported a
 that carries the optical sizes), so it works with no internet. A second font needs a decision record and must pass two
 checks: it has the ₹ sign (render ₹ with the font in front of two different fallback fonts that have ₹; equal widths
 mean the glyph is the font's own) and its digits are the same width (with `tabular-nums`, "1111111111" and
-"0000000000" measure the same). See `docs/decisions/0010-bricolage-grotesque.md`.
+"0000000000" measure the same). See `../decisions/0010-bricolage-grotesque.md` (outside the repo).
 
 **The Bare Heading Rule.** Write page titles and section headings bare, `<h1>Title</h1>` and `<h2>Section</h2>`, with
 no size, weight or tracking classes. `index.css` styles `h1` and `h2` once, so every page gets the same headline without

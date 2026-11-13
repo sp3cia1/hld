@@ -1,0 +1,36 @@
+{
+  "name": "@bh/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=../../.env src/server.ts",
+    "start": "tsx --env-file=../../.env src/server.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "postinstall": "prisma generate",
+    "db:push": "prisma db push && prisma generate",
+    "db:push:test": "cross-env NODE_ENV=test prisma db push",
+    "db:reset": "cross-env PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes-local-hackathon-databases-only prisma db push --force-reset && prisma generate"
+  },
+  "dependencies": {
+    "@bh/shared": "*",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "express": "5.3.0",
+    "pg": "8.23.1",
+    "pino": "10.4.0",
+    "pino-http": "11.0.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/pg": "8.23.1",
+    "@types/supertest": "7.2.1",
+    "cross-env": "10.1.0",
+    "pino-pretty": "13.2.0",
+    "prisma": "7.10.1",
+    "supertest": "7.3.2",
+    "tsx": "4.23.15",
+    "vitest": "5.1.0"
+  }
+}

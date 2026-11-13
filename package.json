@@ -1,0 +1,39 @@
+{
+  "name": "build-my-holiday",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "setup": "npm install && node scripts/init-env.js && npm run db:push && npm run db:push:test",
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @bh/api\" \"npm run dev -w @bh/web\"",
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "test": "npm run test -w @bh/api",
+    "format": "prettier --write .",
+    "db:push": "npm run db:push -w @bh/api",
+    "db:push:test": "npm run db:push:test -w @bh/api",
+    "db:reset": "npm run db:reset -w @bh/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.5",
+    "concurrently": "10.0.7",
+    "eslint": "10.14.0",
+    "globals": "17.14.0",
+    "prettier": "3.9.10",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.1.0"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}
