@@ -189,6 +189,13 @@ None found. The profile on 13 Nov showed 0 unreadable records, 0 duplicate IDs a
     budget, and the fastest and best rated always beat the others on their measure. 0.3 s for the slowest request.
     In this data the bus-or-taxi choice never decides the fastest (one city is always faster in the UAE), so no test
     shows it.
+- **Changing the cities (G3):** the package page shows the trip's cities and nights ("Tokyo 2 nights → Osaka 4
+  nights") with "Change cities". It lists every valid city plan (`GET /api/packages/:id/city-plans`): the plans the
+  rules allow, each with its cheapest total, or why it can't be built, about that plan's own cities ("No flight from
+  Delhi with 3 seats lands near Osaka on 1 Apr 2027"). Picking one (`POST /api/packages/:id/rebuild`) builds the
+  cheapest, fastest and best-rated packages again for that plan only, from the package's saved request, and opens
+  them as new packages: hotels, flights and visits are chosen again, and the package it started from stays as it was.
+  A plan not on the list is refused (400). A confirmed holiday shows its cities without "Change cities".
 
 ## Cut
 
