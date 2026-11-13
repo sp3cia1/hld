@@ -1,12 +1,15 @@
-import type { PackageResponse } from '@bh/shared/holiday-package';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { BuildResult, CityPlan, PackageResponse } from '@bh/shared/holiday-package';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { retryUnlessNotFound } from '@/lib/api-client';
 import {
   createPackage,
+  fetchCityPlans,
   fetchOptions,
   fetchPackage,
   fetchPackageCheck,
   fetchPackageExport,
+  readQuickRequest,
+  rebuildPackage,
 } from './api';
 
 export function useOptions() {
@@ -58,14 +61,39 @@ export function useCreatePackage() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createPackage,
-    onSuccess: ({ data }) => {
-      // The new package is already here, so its page opens at once instead of fetching it again.
-      // A package just built has no reservation yet.
-      if (data.status !== 'NO_PACKAGE') {
-        queryClient.setQueryData<PackageResponse>(packageKey(data.packageId), {
-          data: { ...data, reference: null },
-        });
-      }
-    },
+    onSuccess: ({ data }) => seedBuilt(queryClient, data),
   });
+}
+
+/** Reads a holiday described in plain words (S1). It only fills the form: nothing is built or saved. */
+export function useQuickRequest() {
+  return useMutation({ mutationFn: readQuickRequest });
+}
+
+/** The valid city plans for a package, each with its cheapest total or why it can't be built (G3). */
+export function useCityPlans(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: [...packageKey(id), 'city-plans'],
+    queryFn: () => fetchCityPlans(id),
+    enabled,
+  });
+}
+
+/** Builds the three packages again for the chosen city plan (G3). */
+export function useRebuildPackage(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (cityPlan: CityPlan) => rebuildPackage(id, cityPlan),
+    onSuccess: ({ data }) => seedBuilt(queryClient, data),
+  });
+}
+
+function seedBuilt(queryClient: QueryClient, data: BuildResult) {
+  // The new package is already here, so its page opens at once instead of fetching it again.
+  // A package just built has no reservation yet.
+  if (data.status !== 'NO_PACKAGE') {
+    queryClient.setQueryData<PackageResponse>(packageKey(data.packageId), {
+      data: { ...data, reference: null },
+    });
+  }
 }

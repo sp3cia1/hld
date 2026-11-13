@@ -227,3 +227,32 @@ export type SavedPackage = z.infer<typeof savedPackageSchema>;
 
 export const packageResponseSchema = dataResponseSchema(savedPackageSchema);
 export type PackageResponse = z.infer<typeof packageResponseSchema>;
+
+// G3: choosing another city plan. The package page lists the valid plans; picking one builds the three packages again
+// for that plan.
+
+/** One city of a plan and the nights spent there. */
+export const cityStopSchema = z.object({
+  city: z.string().min(1),
+  nights: z.number().int().positive(),
+});
+/** The cities of a trip in travel order. */
+export const cityPlanSchema = z.array(cityStopSchema).min(1);
+export type CityPlan = z.infer<typeof cityPlanSchema>;
+
+/** A valid city plan: its cheapest total, or the reason it can't be built (then `totalInr` is null). */
+export const cityPlanChoiceSchema = z.object({
+  plan: cityPlanSchema,
+  totalInr: inr.nullable(),
+  reason: z.string().nullable(),
+  current: z.boolean(),
+});
+export type CityPlanChoice = z.infer<typeof cityPlanChoiceSchema>;
+
+export const cityPlanChoicesSchema = z.object({ choices: z.array(cityPlanChoiceSchema) });
+export type CityPlanChoices = z.infer<typeof cityPlanChoicesSchema>;
+export const cityPlanChoicesResponseSchema = dataResponseSchema(cityPlanChoicesSchema);
+
+/** POST /api/packages/:id/rebuild: build the three packages again for this plan. Answers like POST /api/packages. */
+export const rebuildRequestSchema = z.object({ cityPlan: cityPlanSchema });
+export type RebuildRequest = z.infer<typeof rebuildRequestSchema>;

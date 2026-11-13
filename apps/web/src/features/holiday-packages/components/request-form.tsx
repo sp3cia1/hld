@@ -1,5 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { Options } from '@bh/shared/options';
+import type { QuickRequestResult } from '@bh/shared/quick-request';
 import { Plus, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Controller, useFieldArray, useForm, type FieldPath } from 'react-hook-form';
@@ -12,6 +13,7 @@ import { getErrorMessage, getFieldErrors } from '@/lib/error-messages';
 import { groupRupees } from '@/lib/format';
 import { useCreatePackage } from '../hooks';
 import type { PackagePageState } from '../pages/package-page';
+import { QuickRequestBox, REQUIRED_FIELDS } from './quick-request-box';
 import {
   requestFormSchema,
   toFormPath,
@@ -22,7 +24,10 @@ import {
 // A new child row starts with no age, so the field is empty until the traveler types one.
 const NEW_CHILD = { age: undefined } as unknown as RequestFormValues['children'][number];
 
-/** The 7 request fields (M1). Builds a package and opens it, or says why none is possible. */
+/**
+ * The 7 request fields (M1), with the quick request (S1) above them to fill them from plain words. Builds a package
+ * and opens it, or says why none is possible.
+ */
 export function RequestForm({ options }: { options: Options }) {
   const navigate = useNavigate();
   const create = useCreatePackage();
@@ -58,158 +63,194 @@ export function RequestForm({ options }: { options: Options }) {
     });
   }
 
+  /** Fills in what the quick request read. A field it didn't read keeps what the traveler typed. */
+  function fillFrom({ fields, childrenWithoutAges }: QuickRequestResult) {
+    for (const name of REQUIRED_FIELDS) {
+      const value = fields[name];
+      if (value === undefined) continue;
+      form.setValue(name, value, { shouldDirty: true });
+      form.clearErrors(name);
+    }
+    if (fields.childAges !== undefined) {
+      children.replace([
+        ...fields.childAges.map((age) => ({ age })),
+        ...Array.from({ length: childrenWithoutAges }, () => NEW_CHILD),
+      ]);
+      form.clearErrors('children');
+    }
+    // The traveler goes on from the first thing the text didn't give. The new child rows exist after this render.
+    const missing = REQUIRED_FIELDS.find((name) => fields[name] === undefined);
+    const childWithoutAge = childrenWithoutAges > 0 ? fields.childAges?.length : undefined;
+    setTimeout(() => {
+      if (missing) form.setFocus(missing);
+      else if (childWithoutAge !== undefined) form.setFocus(`children.${childWithoutAge}.age`);
+    }, 0);
+  }
+
   const noPackage = create.data?.data.status === 'NO_PACKAGE' ? create.data.data.reason : null;
 
   return (
-    <form onSubmit={(e) => void form.handleSubmit(onSubmit)(e)} className="space-y-6" noValidate>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Field id="departureAirport" label="From" error={errors.departureAirport?.message}>
-          <NativeSelect
-            id="departureAirport"
-            aria-invalid={!!errors.departureAirport}
-            {...form.register('departureAirport')}
-          >
-            <option value="">Choose a city</option>
-            {options.departureCities.map(({ airport, city }) => (
-              <option key={airport} value={airport}>
-                {city} ({airport})
-              </option>
-            ))}
-          </NativeSelect>
-        </Field>
-        <Field id="country" label="To" error={errors.country?.message}>
-          <NativeSelect id="country" aria-invalid={!!errors.country} {...form.register('country')}>
-            <option value="">Choose a country</option>
-            {options.countries.map(({ code, name }) => (
-              <option key={code} value={code}>
-                {name}
-              </option>
-            ))}
-          </NativeSelect>
-        </Field>
-        <Field id="startDate" label="First day of the holiday" error={errors.startDate?.message}>
-          <Input
-            id="startDate"
-            type="date"
-            min={options.dataWindow.firstNight}
-            max={options.dataWindow.lastDeparture}
-            aria-invalid={!!errors.startDate}
-            {...form.register('startDate')}
-          />
-        </Field>
-        <Field id="nights" label="Nights" error={errors.nights?.message}>
-          <Input
-            id="nights"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            aria-invalid={!!errors.nights}
-            {...form.register('nights', { valueAsNumber: true })}
-          />
-        </Field>
-        <Field id="adults" label="Adults" error={errors.adults?.message}>
-          <Input
-            id="adults"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            aria-invalid={!!errors.adults}
-            {...form.register('adults', { valueAsNumber: true })}
-          />
-        </Field>
-        <Field id="budgetInr" label="Budget in ₹" error={errors.budgetInr?.message}>
-          {/* A text box, not type="number": a number box can't show the commas. The value stays a number. */}
-          <Controller
-            control={form.control}
-            name="budgetInr"
-            render={({ field }) => (
-              <Input
-                id="budgetInr"
-                name={field.name}
-                ref={field.ref}
-                inputMode="numeric"
-                autoComplete="off"
-                aria-invalid={!!errors.budgetInr}
-                // Untouched, the value is undefined; a cleared box is NaN. Both show empty.
-                value={
-                  typeof field.value === 'number' && !Number.isNaN(field.value)
-                    ? groupRupees(field.value)
-                    : ''
-                }
-                onBlur={field.onBlur}
-                onChange={(e) => {
-                  const digits = e.target.value.replace(/\D/g, '');
-                  // Empty becomes NaN, which the schema reports as "Enter a budget".
-                  field.onChange(digits === '' ? Number.NaN : Number(digits));
-                }}
-              />
-            )}
-          />
-        </Field>
+    <div className="space-y-6">
+      <QuickRequestBox onRead={fillFrom} />
+      <div aria-hidden className="flex items-center gap-3 text-sm text-muted-foreground">
+        <span className="flex-1 border-t-2" />
+        or fill it in yourself
+        <span className="flex-1 border-t-2" />
       </div>
+      <form onSubmit={(e) => void form.handleSubmit(onSubmit)(e)} className="space-y-6" noValidate>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field id="departureAirport" label="From" error={errors.departureAirport?.message}>
+            <NativeSelect
+              id="departureAirport"
+              aria-invalid={!!errors.departureAirport}
+              {...form.register('departureAirport')}
+            >
+              <option value="">Choose a city</option>
+              {options.departureCities.map(({ airport, city }) => (
+                <option key={airport} value={airport}>
+                  {city} ({airport})
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field id="country" label="To" error={errors.country?.message}>
+            <NativeSelect
+              id="country"
+              aria-invalid={!!errors.country}
+              {...form.register('country')}
+            >
+              <option value="">Choose a country</option>
+              {options.countries.map(({ code, name }) => (
+                <option key={code} value={code}>
+                  {name}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field id="startDate" label="First day of the holiday" error={errors.startDate?.message}>
+            <Input
+              id="startDate"
+              type="date"
+              min={options.dataWindow.firstNight}
+              max={options.dataWindow.lastDeparture}
+              aria-invalid={!!errors.startDate}
+              {...form.register('startDate')}
+            />
+          </Field>
+          <Field id="nights" label="Nights" error={errors.nights?.message}>
+            <Input
+              id="nights"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              aria-invalid={!!errors.nights}
+              {...form.register('nights', { valueAsNumber: true })}
+            />
+          </Field>
+          <Field id="adults" label="Adults" error={errors.adults?.message}>
+            <Input
+              id="adults"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              aria-invalid={!!errors.adults}
+              {...form.register('adults', { valueAsNumber: true })}
+            />
+          </Field>
+          <Field id="budgetInr" label="Budget in ₹" error={errors.budgetInr?.message}>
+            {/* A text box, not type="number": a number box can't show the commas. The value stays a number. */}
+            <Controller
+              control={form.control}
+              name="budgetInr"
+              render={({ field }) => (
+                <Input
+                  id="budgetInr"
+                  name={field.name}
+                  ref={field.ref}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  aria-invalid={!!errors.budgetInr}
+                  // Untouched, the value is undefined; a cleared box is NaN. Both show empty.
+                  value={
+                    typeof field.value === 'number' && !Number.isNaN(field.value)
+                      ? groupRupees(field.value)
+                      : ''
+                  }
+                  onBlur={field.onBlur}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, '');
+                    // Empty becomes NaN, which the schema reports as "Enter a budget".
+                    field.onChange(digits === '' ? Number.NaN : Number(digits));
+                  }}
+                />
+              )}
+            />
+          </Field>
+        </div>
 
-      <fieldset className="space-y-3">
-        <legend className="text-sm font-medium">Children</legend>
-        {children.fields.length > 0 && (
-          <div className="flex flex-wrap gap-4">
-            {children.fields.map((child, index) => {
-              const error = errors.children?.[index]?.age?.message;
-              return (
-                <div key={child.id} className="w-40 space-y-2">
-                  <Label htmlFor={`child-${index}`}>Age of child {index + 1}</Label>
-                  <div className="flex gap-1">
-                    <Input
-                      id={`child-${index}`}
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      aria-invalid={!!error}
-                      {...form.register(`children.${index}.age`, { valueAsNumber: true })}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Remove child ${index + 1}`}
-                      onClick={() => children.remove(index)}
-                    >
-                      <X />
-                    </Button>
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-medium">Children</legend>
+          {children.fields.length > 0 && (
+            <div className="flex flex-wrap gap-4">
+              {children.fields.map((child, index) => {
+                const error = errors.children?.[index]?.age?.message;
+                return (
+                  <div key={child.id} className="w-40 space-y-2">
+                    <Label htmlFor={`child-${index}`}>Age of child {index + 1}</Label>
+                    <div className="flex gap-1">
+                      <Input
+                        id={`child-${index}`}
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        aria-invalid={!!error}
+                        {...form.register(`children.${index}.age`, { valueAsNumber: true })}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Remove child ${index + 1}`}
+                        onClick={() => children.remove(index)}
+                      >
+                        <X />
+                      </Button>
+                    </div>
+                    {error && <p className="text-sm text-destructive">{error}</p>}
                   </div>
-                  {error && <p className="text-sm text-destructive">{error}</p>}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => children.append(NEW_CHILD)}
+          >
+            <Plus />
+            Add a child
+          </Button>
+        </fieldset>
+
+        {create.isError && (
+          <p role="alert" className="text-sm text-destructive">
+            {getErrorMessage(create.error)}
+          </p>
+        )}
+        <Button type="submit" className="w-full sm:w-auto" disabled={create.isPending}>
+          {create.isPending ? 'Building your holiday…' : 'Build my holiday'}
+        </Button>
+
+        {noPackage && (
+          <div role="alert" className="space-y-1 border-t-2 pt-6">
+            <h2>We can't build this holiday</h2>
+            <p>{noPackage.message}</p>
+            <p className="text-muted-foreground">Change a detail above and try again.</p>
           </div>
         )}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => children.append(NEW_CHILD)}
-        >
-          <Plus />
-          Add a child
-        </Button>
-      </fieldset>
-
-      {create.isError && (
-        <p role="alert" className="text-sm text-destructive">
-          {getErrorMessage(create.error)}
-        </p>
-      )}
-      <Button type="submit" className="w-full sm:w-auto" disabled={create.isPending}>
-        {create.isPending ? 'Building your holiday…' : 'Build my holiday'}
-      </Button>
-
-      {noPackage && (
-        <div role="alert" className="space-y-1 border-t-2 pt-6">
-          <h2>We can't build this holiday</h2>
-          <p>{noPackage.message}</p>
-          <p className="text-muted-foreground">Change a detail above and try again.</p>
-        </div>
-      )}
-    </form>
+      </form>
+    </div>
   );
 }
 

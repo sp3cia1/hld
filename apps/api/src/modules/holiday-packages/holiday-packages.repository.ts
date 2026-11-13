@@ -1,4 +1,9 @@
-import { tripSchema, type HolidayRequest, type Trip } from '@bh/shared/holiday-package';
+import {
+  holidayRequestSchema,
+  tripSchema,
+  type HolidayRequest,
+  type Trip,
+} from '@bh/shared/holiday-package';
 import type { Prisma } from '../../generated/prisma/client';
 import { prisma } from '../../lib/prisma';
 import type { Tx } from '../../lib/transaction';
@@ -29,4 +34,10 @@ export async function findPackage(
   });
   if (!row) return null;
   return { trip: tripSchema.parse(row.trip), reference: row.reservation?.reference ?? null };
+}
+
+/** The request a package was built from, as the traveler sent it. */
+export async function findPackageRequest(id: string): Promise<HolidayRequest | null> {
+  const row = await prisma.package.findUnique({ where: { id }, select: { request: true } });
+  return row ? holidayRequestSchema.parse(row.request) : null;
 }

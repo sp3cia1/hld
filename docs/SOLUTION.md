@@ -181,10 +181,34 @@ None found. The profile on 13 Nov showed 0 unreadable records, 0 duplicate IDs a
   - The package page shows the options as cards with Cheapest, Fastest and Best rated badges and each one's total,
     cities, travel time and average stars, read live so they stay right after a change. The list lives in the browser's
     history entry: it survives a refresh, not a link opened fresh (a group id in the database would fix that).
+- **Quick request (S1), `POST /api/quick-request { text }` (`quick-request.logic.ts`):** reads a holiday described
+  in plain words into the request form's fields, with rules and no AI. It fills only what the text says, and never
+  builds: the traveler checks the fields and clicks Build, and the form checks them against the data as usual.
+  - **What it reads:** departure cities and countries by name or code from destinations.json, plus Bangalore, Bombay,
+    Madras, New Delhi and UAE; a country's cities, and its attractions with their `aliases` (Fushimi Inari → Japan);
+    dates (`10 April`, `April 10`, `2027-04-10`, `10/04/2027`), with "10 to 16 April" giving the first day and 6
+    nights; nights; adults ("2 adults", couple = 2, solo = 1, "family of 4" with two children = 2); children's ages
+    ("a 6-year-old", "aged 4 and 9", "son (6)"); the budget ("3.5 lakh", "₹3,50,000", "350k").
+  - **Left out, with a note:** anything that could mean two things or that the data doesn't have: "a week" or "5 days"
+    (which number of nights?), "3–4 lakh", two different cities or budgets, "family of 4" with no children named, a
+    month with no day, 31 April, "from Kolkata", "to Bali". "2 kids" with no ages adds two children whose ages the
+    form then asks for.
+  - **Two readings it makes, and says so:** a date without a year is in 2027, the only year in the data, and 10/04 is
+    day first, as dates are written in India.
+  - **On the page:** a "Describe your trip" box at the top of the search panel. "Fill the form" (or Enter) fills the
+    fields below, lists what came from the text and what didn't, shows the notes, and moves to the first field
+    still to fill. A field the text doesn't give keeps what the traveler typed.
   - Proof (13 Nov): 907 requests, 3 kinds of party, 2,189 packages offered: every one passes the validator and is within
     budget, and the fastest and best rated always beat the others on their measure. 0.3 s for the slowest request.
     In this data the bus-or-taxi choice never decides the fastest (one city is always faster in the UAE), so no test
     shows it.
+- **Changing the cities (G3):** the package page shows the trip's cities and nights ("Tokyo 2 nights → Osaka 4
+  nights") with "Change cities". It lists every valid city plan (`GET /api/packages/:id/city-plans`): the plans the
+  rules allow, each with its cheapest total, or why it can't be built, about that plan's own cities ("No flight from
+  Delhi with 3 seats lands near Osaka on 1 Apr 2027"). Picking one (`POST /api/packages/:id/rebuild`) builds the
+  cheapest, fastest and best-rated packages again for that plan only, from the package's saved request, and opens
+  them as new packages: hotels, flights and visits are chosen again, and the package it started from stays as it was.
+  A plan not on the list is refused (400). A confirmed holiday shows its cities without "Change cities".
 
 ## Cut
 
