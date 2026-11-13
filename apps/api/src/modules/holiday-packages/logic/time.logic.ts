@@ -70,6 +70,11 @@ export function addDays(date: string, days: number): string {
   return asUtcDate(date, days).toISOString().slice(0, 10);
 }
 
+/** Whole days from one date to another: `2027-04-10` to `2027-04-16` is 6, the nights of a stay. */
+export function daysBetween(from: string, to: string): number {
+  return (asUtcDate(to, 0).getTime() - asUtcDate(from, 0).getTime()) / (DAY * 60_000);
+}
+
 export function weekdayOf(date: string): Weekday {
   return WEEKDAYS[asUtcDate(date, 0).getUTCDay()]!;
 }

@@ -1,6 +1,7 @@
-import type { HolidayRequest, NoPackageReason, Trip, TripItem } from '@bh/shared/holiday-package';
+import type { HolidayRequest, NoPackageReason, Trip } from '@bh/shared/holiday-package';
 import { key, type Catalog } from '../../catalog/catalog.logic';
 import type { Attraction, Flight, Hotel, Room, Transfer } from '../../catalog/catalog.schemas';
+import { cheapestTransferFromAirport, cheapestTransferToAirport } from './airport-transfers.logic';
 import { assignCheapest, earliestVisit } from './attractions.logic';
 import { cityPlans, type CityPlan } from './plans.logic';
 import {
@@ -8,26 +9,13 @@ import {
   flightPrice,
   hotelPrice,
   transferPrice,
-  transferQuantity,
   travelersIn,
   type Party,
 } from './pricing.logic';
 import { roomsNeeded } from './rooms.logic';
-import {
-  addDays,
-  departureAtOrAfter,
-  earliestInWindow,
-  formatDate,
-  latestInWindow,
-  localDateTime,
-  minutesOf,
-} from './time.logic';
-import {
-  HOPS_LEAVE_AT,
-  MIN_MINUTES_AFTER_LANDING,
-  MIN_MINUTES_BEFORE_DEPARTURE,
-  VISITS_START_AT,
-} from './travel-rules';
+import { addDays, departureAtOrAfter, formatDate, minutesOf } from './time.logic';
+import { HOPS_LEAVE_AT, VISITS_START_AT } from './travel-rules';
+import { attractionItem, flightItem, hotelItem, transferItem } from './trip-items.logic';
 
 // Builds a package for a request that passed `checkRequest`: it prices every city plan and keeps the cheapest.
 // ARCHITECTURE.md ("Building a package") explains each step.
@@ -223,8 +211,8 @@ function cheapestStop(
 ): Stop | null {
   let best: Stop | null = null;
   for (const stay of stays) {
-    const arrival = arrivals ? cheapestArrival(arrivals, stay, segment.city, ctx) : null;
-    const departure = returns ? cheapestDeparture(returns, stay, segment.city, ctx) : null;
+    const arrival = arrivals ? cheapestArrival(arrivals, stay, ctx) : null;
+    const departure = returns ? cheapestDeparture(returns, stay, ctx) : null;
     if (arrival === undefined || departure === undefined) continue;
     const cost = stay.price + (arrival?.price ?? 0) + (departure?.price ?? 0);
     if (!best || cost < best.cost) best = { segment, stay, arrival, departure, cost };
@@ -250,62 +238,37 @@ function staysIn(segment: Segment, ctx: Context): Stay[] {
   return stays;
 }
 
-/** Airport transfers between `airport` and the hotel's area. `area: null` serves every area of the city. */
-function transfersFor(airport: string, city: string, hotel: Hotel, ctx: Context): Transfer[] {
-  return (ctx.catalog.airportTransfers.get(key(airport, city)) ?? []).filter(
-    (t) => t.area === null || t.area === hotel.area,
-  );
-}
-
-/** The cheapest arrival flight plus transfer to this hotel, picked up at the earliest valid time. */
-function cheapestArrival(
-  arrivals: Flight[],
-  stay: Stay,
-  city: string,
-  ctx: Context,
-): Leg | undefined {
+/**
+ * The cheapest arrival flight plus the transfer from its airport to this hotel. Each flight brings its own cheapest
+ * transfer, so comparing flight + transfer per flight finds the cheapest pair. On a tie, reach the hotel sooner.
+ */
+function cheapestArrival(arrivals: Flight[], stay: Stay, ctx: Context): Leg | undefined {
   let best: Leg | undefined;
   for (const flight of arrivals) {
-    const earliest = minutesOf(flight.arrival_local.slice(11)) + MIN_MINUTES_AFTER_LANDING;
-    for (const transfer of transfersFor(flight.to, city, stay.hotel, ctx)) {
-      const pickup = earliestInWindow(earliest, transfer.service_from, transfer.service_until);
-      if (pickup === null) continue;
-      const price = flightPrice(flight, ctx.party) + transferPrice(transfer, ctx.party);
-      // On a tie, reach the hotel sooner.
-      const reachesHotel = pickup + transfer.duration_minutes;
-      if (
-        !best ||
-        price < best.price ||
-        (price === best.price && reachesHotel < best.at + best.transfer.duration_minutes)
-      ) {
-        best = { flight, transfer, at: pickup, price };
-      }
+    const pick = cheapestTransferFromAirport(flight, stay.hotel, ctx.catalog, ctx.party);
+    if (!pick) continue;
+    const price = flightPrice(flight, ctx.party) + pick.price;
+    const reachesHotel = pick.at + pick.transfer.duration_minutes;
+    if (
+      !best ||
+      price < best.price ||
+      (price === best.price && reachesHotel < best.at + best.transfer.duration_minutes)
+    ) {
+      best = { flight, transfer: pick.transfer, at: pick.at, price };
     }
   }
   return best;
 }
 
-/** The cheapest return flight plus transfer from this hotel, leaving the hotel at the latest valid time. */
-function cheapestDeparture(
-  returns: Flight[],
-  stay: Stay,
-  city: string,
-  ctx: Context,
-): Leg | undefined {
+/** The cheapest return flight plus the transfer from this hotel to its airport. On a tie, leave the hotel later. */
+function cheapestDeparture(returns: Flight[], stay: Stay, ctx: Context): Leg | undefined {
   let best: Leg | undefined;
   for (const flight of returns) {
-    for (const transfer of transfersFor(flight.from, city, stay.hotel, ctx)) {
-      const latest =
-        minutesOf(flight.departure_local.slice(11)) -
-        MIN_MINUTES_BEFORE_DEPARTURE -
-        transfer.duration_minutes;
-      const leave = latestInWindow(latest, transfer.service_from, transfer.service_until);
-      if (leave === null) continue;
-      const price = flightPrice(flight, ctx.party) + transferPrice(transfer, ctx.party);
-      // On a tie, leave the hotel later.
-      if (!best || price < best.price || (price === best.price && leave > best.at)) {
-        best = { flight, transfer, at: leave, price };
-      }
+    const pick = cheapestTransferToAirport(flight, stay.hotel, ctx.catalog, ctx.party);
+    if (!pick) continue;
+    const price = flightPrice(flight, ctx.party) + pick.price;
+    if (!best || price < best.price || (price === best.price && pick.at > best.at)) {
+      best = { flight, transfer: pick.transfer, at: pick.at, price };
     }
   }
   return best;
@@ -391,19 +354,29 @@ function writeTrip(p: PlanPackage, ctx: Context): PlannedTrip {
   const arrival = first.arrival!;
   const departure = last.departure!;
   const items = [
-    flightItem(arrival.flight, first.segment.city, ctx),
-    transferItem(arrival.transfer, first.segment.city, ctx.start, arrival.at, ctx),
+    flightItem(arrival.flight, first.segment.city, party),
+    transferItem(arrival.transfer, first.segment.city, ctx.start, arrival.at, party),
     ...p.stops.flatMap((stop, i) => {
       const hop = i > 0 ? p.hops[i - 1]! : null;
+      const { segment, stay } = stop;
       return [
         // A move between cities belongs to the city it arrives in, as a flight does.
-        ...(hop ? [transferItem(hop.transfer, stop.segment.city, hop.day, hop.at, ctx)] : []),
-        hotelItem(stop.stay, stop.segment),
-        ...p.visits[i]!.map((visit) => attractionItem(visit, stop.segment.city, ctx)),
+        ...(hop ? [transferItem(hop.transfer, segment.city, hop.day, hop.at, party)] : []),
+        // Check-in on the city's first night, check-out the day after its last.
+        hotelItem(
+          stay.hotel,
+          stay.room,
+          stay.rooms,
+          segment.nights[0]!,
+          addDays(segment.nights.at(-1)!, 1),
+        ),
+        ...p.visits[i]!.map((visit) =>
+          attractionItem(visit.attraction, visit.day, visit.start, party),
+        ),
       ];
     }),
-    transferItem(departure.transfer, last.segment.city, ctx.lastDay, departure.at, ctx),
-    flightItem(departure.flight, ctx.departureCity, ctx),
+    transferItem(departure.transfer, last.segment.city, ctx.lastDay, departure.at, party),
+    flightItem(departure.flight, ctx.departureCity, party),
   ].map((item, index) => ({ item_id: `i${index + 1}`, ...item }));
 
   return {
@@ -426,81 +399,6 @@ function writeTrip(p: PlanPackage, ctx: Context): PlannedTrip {
 
 function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
-}
-
-type NewItem = Omit<TripItem, 'item_id'>;
-
-function item(
-  fields: Pick<
-    NewItem,
-    'type' | 'name' | 'city' | 'catalog_id' | 'start' | 'end' | 'room_id' | 'quantity' | 'price_inr'
-  >,
-): NewItem {
-  return { ...fields, status: 'PLANNED', booking: null, sources: [], warnings: [] };
-}
-
-/** A flight's `city` is where it lands. Times keep the flight's own local times, without seconds. */
-function flightItem(flight: Flight, city: string, ctx: Context): NewItem {
-  return item({
-    type: 'flight',
-    name: `${flight.flight_number} ${flight.from} to ${flight.to}`,
-    city,
-    catalog_id: flight.flight_id,
-    start: flight.departure_local.slice(0, 16),
-    end: flight.arrival_local.slice(0, 16),
-    room_id: null,
-    quantity: ctx.travelers,
-    price_inr: flightPrice(flight, ctx.party),
-  });
-}
-
-function transferItem(
-  transfer: Transfer,
-  city: string,
-  date: string,
-  at: number,
-  ctx: Context,
-): NewItem {
-  return item({
-    type: 'transfer',
-    name: transfer.name,
-    city,
-    catalog_id: transfer.transfer_id,
-    start: localDateTime(date, at),
-    end: localDateTime(date, at + transfer.duration_minutes),
-    room_id: null,
-    quantity: transferQuantity(transfer, ctx.party),
-    price_inr: transferPrice(transfer, ctx.party),
-  });
-}
-
-/** `start` is the check-in date (the city's first night) and `end` the check-out date (the day after its last). */
-function hotelItem(stay: Stay, segment: Segment): NewItem {
-  return item({
-    type: 'hotel',
-    name: `${stay.hotel.name}, ${stay.room.name}`,
-    city: segment.city,
-    catalog_id: stay.hotel.hotel_id,
-    start: segment.nights[0]!,
-    end: addDays(segment.nights.at(-1)!, 1),
-    room_id: stay.room.room_id,
-    quantity: stay.rooms,
-    price_inr: stay.price,
-  });
-}
-
-function attractionItem(visit: Visit, city: string, ctx: Context): NewItem {
-  return item({
-    type: 'attraction',
-    name: visit.attraction.name,
-    city,
-    catalog_id: visit.attraction.attraction_id,
-    start: localDateTime(visit.day, visit.start),
-    end: localDateTime(visit.day, visit.start + visit.attraction.visit_minutes),
-    room_id: null,
-    quantity: ctx.travelers,
-    price_inr: visit.price,
-  });
 }
 
 /** Why no package is possible, from the plan that got furthest, in the traveler's words. */

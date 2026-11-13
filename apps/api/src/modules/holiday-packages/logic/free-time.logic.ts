@@ -1,5 +1,6 @@
 import type { FreeTime, Trip } from '@bh/shared/holiday-package';
 import type { Catalog } from '../../catalog/catalog.logic';
+import type { Transfer } from '../../catalog/catalog.schemas';
 import { earliestVisit } from './attractions.logic';
 import { attractionPrice, transferPrice, type Party } from './pricing.logic';
 import { earliestInWindow, localDateTime, minutesOf } from './time.logic';
@@ -8,8 +9,16 @@ import { earliestInWindow, localDateTime, minutesOf } from './time.logic';
 // and after a long flight or a move a free afternoon is the calm default. Instead, the traveler sees what still fits
 // and chooses. docs/SOLUTION.md has the decision.
 
-/** A day the traveler reaches a new hotel, and when (minutes after midnight). */
-type Arrival = { day: string; city: string; at: number; stationTaxiInr: number | null };
+/**
+ * A day the traveler reaches a new hotel, and when (minutes after midnight). On a change day by train or bus, the taxi
+ * from the station that gets them there: a visit that day adds it to the package. Null otherwise.
+ */
+export type HotelArrival = {
+  day: string;
+  city: string;
+  at: number;
+  stationTaxi: { transfer: Transfer; at: number; price: number } | null;
+};
 
 /**
  * The attractions that still fit on the arrival day and on each city-change day, after the traveler reaches the
@@ -40,7 +49,7 @@ export function freeTimeIn(trip: Omit<Trip, 'trip_id'>, catalog: Catalog): FreeT
           date: arrival.day,
           city: arrival.city,
           freeFrom: localDateTime(arrival.day, arrival.at),
-          stationTaxiInr: arrival.stationTaxiInr,
+          stationTaxiInr: arrival.stationTaxi?.price ?? null,
           attractions: fits.map((fit) => ({
             attractionId: fit.attraction.attraction_id,
             name: fit.attraction.name,
@@ -60,8 +69,12 @@ export function freeTimeIn(trip: Omit<Trip, 'trip_id'>, catalog: Catalog): FreeT
  * - City-change day: the train or bus arrival plus the city's taxi from the station, which a visit would add to the
  *   package with its price. A door-to-door taxi arrives at the hotel itself.
  */
-function arrivalsIn(trip: Omit<Trip, 'trip_id'>, catalog: Catalog, party: Party): Arrival[] {
-  const arrivals: Arrival[] = [];
+export function arrivalsIn(
+  trip: Omit<Trip, 'trip_id'>,
+  catalog: Catalog,
+  party: Party,
+): HotelArrival[] {
+  const arrivals: HotelArrival[] = [];
   for (const item of trip.items) {
     if (item.type !== 'transfer') continue;
     const transfer = catalog.transfers.get(item.catalog_id)!;
@@ -70,13 +83,13 @@ function arrivalsIn(trip: Omit<Trip, 'trip_id'>, catalog: Catalog, party: Party)
 
     if (transfer.airport !== null) {
       if (day === trip.start_date)
-        arrivals.push({ day, city: item.city, at: reached, stationTaxiInr: null });
+        arrivals.push({ day, city: item.city, at: reached, stationTaxi: null });
       continue;
     }
     const city = transfer.to_city;
     if (city === undefined) continue;
     if (transfer.door_to_door) {
-      arrivals.push({ day, city, at: reached, stationTaxiInr: null });
+      arrivals.push({ day, city, at: reached, stationTaxi: null });
       continue;
     }
     // Without a taxi from the station, running when the train gets in, there is no knowing when they reach the hotel.
@@ -88,7 +101,7 @@ function arrivalsIn(trip: Omit<Trip, 'trip_id'>, catalog: Catalog, party: Party)
       day,
       city,
       at: pickup + taxi.duration_minutes,
-      stationTaxiInr: transferPrice(taxi, party),
+      stationTaxi: { transfer: taxi, at: pickup, price: transferPrice(taxi, party) },
     });
   }
   return arrivals;

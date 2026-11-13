@@ -7,9 +7,14 @@ import { travelersIn, type Party } from './pricing.logic';
  * Within one room type the smallest `k` is always best: the price and the rooms needed both grow with `k`.
  */
 export function roomsNeeded(room: Room, party: Party): number | null {
-  const rooms = Math.max(
+  const rooms = roomsByHeadcount(room, party);
+  return rooms <= party.adults ? rooms : null;
+}
+
+/** The rooms of this type that hold everyone, before the rule that every room has an adult (adults ≥ k). */
+export function roomsByHeadcount(room: Room, party: Party): number {
+  return Math.max(
     Math.ceil(party.adults / room.max_adults),
     Math.ceil(travelersIn(party) / (room.max_adults + room.max_children)),
   );
-  return rooms <= party.adults ? rooms : null;
 }
