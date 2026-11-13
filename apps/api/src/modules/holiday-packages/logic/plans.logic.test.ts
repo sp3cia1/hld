@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { getCatalog } from '../../catalog/catalog.loader';
 import { key } from '../../catalog/catalog.logic';
-import { cityPlans, type CityPlan } from './plans.logic';
+import { MENON_EXAMPLE_TRIP } from './menon-example';
+import { cityPlans, planOf, samePlan, type CityPlan } from './plans.logic';
 
 const catalog = getCatalog();
 const japan = ['Tokyo', 'Kyoto', 'Osaka'];
@@ -42,5 +43,21 @@ describe('cityPlans', () => {
       'Kyoto 6',
       'Osaka 6',
     ]);
+  });
+});
+
+describe('planOf and samePlan', () => {
+  it('reads the city plan from the hotels', () => {
+    expect(planOf(MENON_EXAMPLE_TRIP)).toEqual([{ city: 'Tokyo', nights: 6 }]);
+  });
+
+  it('compares cities, order and nights', () => {
+    const plan = [
+      { city: 'Tokyo', nights: 2 },
+      { city: 'Osaka', nights: 4 },
+    ];
+    expect(samePlan(plan, [...plan])).toBe(true);
+    expect(samePlan(plan, [...plan].reverse())).toBe(false);
+    expect(samePlan(plan, [{ city: 'Tokyo', nights: 6 }])).toBe(false);
   });
 });
