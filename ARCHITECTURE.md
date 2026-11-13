@@ -209,7 +209,7 @@ runs one path, in `apps/api/src/modules/package-changes`:
 POST /api/packages/:id/changes   { type: 'hotel', city, hotelId, roomId } | { type: 'flight', direction, flightId }
    │
    ▼
-service: load the trip and its updatedAt → 409 PACKAGE_CONFIRMED if BOOKED → 400 if it can't be tried (checkChange)
+service: load the trip and its updatedAt → 409 PACKAGE_CONFIRMED if it has a reservation → 400 if it can't be tried (checkChange)
    │
    ▼
 tryChange (pure, change.logic.ts), on a copy:

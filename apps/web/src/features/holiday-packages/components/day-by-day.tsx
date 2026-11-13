@@ -10,31 +10,30 @@ import { formatInr, formatLocalDate } from '@/lib/format';
 import { FreeTimeList } from './free-time-list';
 
 type DayByDayProps = {
+  items: TripItem[];
+  freeTime: FreeTime[];
+  /** Turns on changing the package (M6). Left out for a confirmed holiday, which is read-only. */
+  changes?: DayChanges;
+};
+
+type DayChanges = {
   packageId: string;
   /** The holiday's first day and last day: visits go on the days from the first up to the day before the last. */
   startDate: string;
   endDate: string;
-  items: TripItem[];
-  freeTime: FreeTime[];
   /** Called after a change to the package is saved. */
   onChanged: () => void;
 };
 
 /**
- * The package day by day (M4): each day that has something on it, items in the package's own time order. A day the
- * package leaves free also lists what still fits once the traveler reaches the hotel. Each hotel and flight can be
- * changed, and visits added or removed (M6); one change panel is open at a time.
+ * The package day by day (M4): each day that has something on it, items in the package's own time order. With
+ * `changes`, a day the package leaves free also lists what still fits once the traveler reaches the hotel, each hotel
+ * and flight can be changed, and visits added or removed (M6); one change panel is open at a time.
  */
-export function DayByDay({
-  packageId,
-  startDate,
-  endDate,
-  items,
-  freeTime,
-  onChanged,
-}: DayByDayProps) {
+export function DayByDay({ items, freeTime, changes }: DayByDayProps) {
   const [openItemId, setOpenItemId] = useState<string | null>(null);
-  const pending = useChangePending(packageId);
+  // No package has the id '', so a read-only plan is never pending.
+  const pending = useChangePending(changes?.packageId ?? '');
   const arrivalFlightId = items.find((item) => item.type === 'flight')?.item_id;
 
   function targetOf(item: TripItem): ChangeTarget | null {
@@ -61,18 +60,18 @@ export function DayByDay({
               <h3 className="text-lg font-bold">{formatLocalDate(day)}</h3>
               <ul className="divide-y">
                 {dayItems.map((item) => {
-                  if (item.type === 'attraction') {
+                  if (changes && item.type === 'attraction') {
                     return (
                       <VisitRow
                         key={item.item_id}
-                        packageId={packageId}
+                        packageId={changes.packageId}
                         item={item}
                         disabled={pending}
-                        onRemoved={onChanged}
+                        onRemoved={changes.onChanged}
                       />
                     );
                   }
-                  const target = targetOf(item);
+                  const target = changes ? targetOf(item) : null;
                   const open = openItemId === item.item_id;
                   return (
                     <ItemRow
@@ -92,11 +91,11 @@ export function DayByDay({
                         )
                       }
                     >
-                      {open && target && (
+                      {changes && open && target && (
                         <ChangePanel
-                          packageId={packageId}
+                          packageId={changes.packageId}
                           target={target}
-                          onApplied={onChanged}
+                          onApplied={changes.onChanged}
                           onClose={() => setOpenItemId(null)}
                         />
                       )}
@@ -104,8 +103,14 @@ export function DayByDay({
                   );
                 })}
               </ul>
-              {free && <FreeTimeList packageId={packageId} freeTime={free} onAdded={onChanged} />}
-              {day >= startDate && day < endDate && (
+              {changes && free && (
+                <FreeTimeList
+                  packageId={changes.packageId}
+                  freeTime={free}
+                  onAdded={changes.onChanged}
+                />
+              )}
+              {changes && day >= changes.startDate && day < changes.endDate && (
                 <div className="space-y-4">
                   <Button
                     variant="outline"
@@ -118,9 +123,9 @@ export function DayByDay({
                   </Button>
                   {adding && (
                     <ChangePanel
-                      packageId={packageId}
+                      packageId={changes.packageId}
                       target={{ kind: 'visit', date: day }}
-                      onApplied={onChanged}
+                      onApplied={changes.onChanged}
                       onClose={() => setOpenItemId(null)}
                     />
                   )}

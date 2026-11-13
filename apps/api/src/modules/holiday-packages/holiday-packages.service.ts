@@ -2,9 +2,10 @@ import type { BuildResult, HolidayRequest, SavedPackage, Trip } from '@bh/shared
 import { AppError } from '../../lib/app-error';
 import { runInTransaction } from '../../lib/transaction';
 import { getCatalog } from '../catalog/catalog.loader';
+import { findPackage, insertPackage, saveTrip } from './holiday-packages.repository';
+import { budgetOf } from './logic/budget.logic';
 import { buildPackage } from './logic/builder.logic';
 import { freeTimeIn } from './logic/free-time.logic';
-import { findTrip, insertPackage, saveTrip } from './holiday-packages.repository';
 import { checkRequest } from './logic/request.logic';
 
 /**
@@ -29,31 +30,29 @@ export async function createPackage(request: HolidayRequest): Promise<BuildResul
     return saved;
   });
 
-  return toSavedPackage(trip);
+  return toSavedPackage(trip, null);
 }
 
 /** A saved package by its id. A refresh, a shared link and a backend restart all read it from here. */
 export async function getPackage(id: string): Promise<SavedPackage> {
-  const trip = await findTrip(id);
-  if (!trip) throw new AppError('NOT_FOUND', 404, 'No package has this id');
-  return toSavedPackage(trip);
+  const saved = await findPackage(id);
+  if (!saved) throw new AppError('NOT_FOUND', 404, 'No package has this id');
+  return toSavedPackage(saved.trip, saved.reference);
 }
 
 /**
- * The package with its total against the budget (M5). It is OVER_BUDGET exactly when the total is above the budget:
- * at build time that is the case only when no package fits (M8), after a change also when the traveler's choices cost
- * more. A total equal to the budget is within it. A built, a loaded and a changed package all go through here.
+ * The package with its total against the budget (M5), its reservation number once confirmed, and the free time on
+ * the days it leaves open. It is OVER_BUDGET exactly when the total is above the budget: at build time that is the
+ * case only when no package fits (M8), after a change also when the traveler's choices cost more. A total equal to
+ * the budget is within it. A built, a loaded and a changed package all go through here.
  */
-export function toSavedPackage(trip: Trip): SavedPackage {
+export function toSavedPackage(trip: Trip, reference: string | null): SavedPackage {
   return {
     status: trip.total_inr <= trip.budget_inr ? 'OK' : 'OVER_BUDGET',
     packageId: trip.trip_id,
     trip,
-    budget: {
-      budgetInr: trip.budget_inr,
-      totalInr: trip.total_inr,
-      leftInr: trip.budget_inr - trip.total_inr,
-    },
+    budget: budgetOf(trip),
+    reference,
     freeTime: freeTimeIn(trip, getCatalog()),
   };
 }

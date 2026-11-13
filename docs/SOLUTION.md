@@ -101,12 +101,13 @@ None found. The profile on 13 Nov showed 0 unreadable records, 0 duplicate IDs a
 - **Request form (`/`):** the 7 fields. Shape errors show on the field before sending; the API's checks against the
   data (nights, dates) come back as field messages too. `NO_PACKAGE` shows its reason under the form, with the
   values kept for editing.
-- **Package page (`/packages/:id`):** the over-budget label (M8), total,
-  budget and amount left or over (M5), and the day-by-day plan (M4).
-  Packages are persisted in PostgreSQL and retrieved through
-  `GET /api/packages/:id`. The page supports refreshes, direct navigation,
-  and shared links, including after a backend restart.
-
+- **Package page (`/packages/:id`):** the over-budget label (M8), total, budget and amount left or over (M5), and
+  the day-by-day plan (M4). Packages are persisted in PostgreSQL and retrieved through `GET /api/packages/:id`, so
+  the page supports refreshes, direct navigation and shared links, including after a backend restart. An unknown id
+  shows "We can't find this holiday", with a way back to the form.
+- **`GET /api/packages/:id`:** the saved package in the same shape as a built one. `status` is `OVER_BUDGET`
+  exactly when the total is above the budget, so the label survives a reload. `reference` is the reservation
+  number once confirmed, otherwise `null`. 404 `NOT_FOUND` for an unknown id.
 - **Free time on the arrival and change days** (`logic/free-time.logic.ts`, `free-time-list.tsx`): the day's card shows when the
   family reaches the hotel and the attractions that still fit, with times and prices. It isn't part of the package or
   the export. "Add" on a row adds it as a visit (M6). City-change days get the same list (reach the hotel =
@@ -126,12 +127,27 @@ None found. The profile on 13 Nov showed 0 unreadable records, 0 duplicate IDs a
     and `GET /api/packages/:id/choices/attraction?date=…`. The traveler picks the attraction and the day; the app
     gives it the earliest free start and, on a change day by train or bus, adds the station taxi. The page has "Add a
     visit" on every day but the last, "Remove" on every visit, and "Add" on each free-time attraction.
+  - A confirmed package can't be changed: 409 `PACKAGE_CONFIRMED`, and the page shows no change controls.
+- **Confirm (M7), `POST /api/reservations { packageId }`:**
+  - **Number:** 10 digits, first 1–9, from `crypto.randomInt` so numbers can't be guessed. Unique in the database; a
+    clash tries a new number.
+  - **Snapshot:** the trip with every item `BOOKED` and `booking.reference` set, saved in `Reservation.trip`. It
+    never changes, even if the package does.
+  - **Safe to repeat:** a package has at most one reservation (`packageId` is unique), so confirming again, or twice
+    at once, returns the first reservation (200 instead of 201). This replaces an `Idempotency-Key` header: the
+    database already guarantees "book once".
+  - **Checked first:** the validator runs before booking, so a package that breaks a rule is refused (422
+    `PACKAGE_INVALID`). Over budget is allowed, with a warning next to the button.
+- **`GET /api/reservations/:reference`:** the snapshot. Anything that isn't a stored number, malformed ones
+  included, is 404 `NOT_FOUND`.
+- **Screens:** a Confirm panel on the package page (disabled while booking; shows the number once booked); a
+  reservation page `/reservations/:reference` with the number, budget and day-by-day plan, read-only, with the
+  "Booked" stamp; a lookup box on the home page. A wrong number shows "We can't find a reservation with this
+  number", with the lookup box to try again.
 - **Validator (`validator.logic.ts`):** `validateTrip(trip, catalog)` returns every broken §4 rule as
   `{ rule, itemId, message }`, and `checkTrip` adds a pass/fail line per rule for the rules panel. The 12 rules and
   their titles are in `packages/shared/src/trip-check.ts`. Written from the statement, not the builder, and imports
-  none of the builder's helpers, so it is a real second check. It already covers city changes (one link transfer on
-  its timetable; a visit that day needs the station taxi), ready for the builder's several cities.
-
+  none of the builder's helpers, so it is a real second check. It already covers city changes (one link transfer on its timetable; a visit that day needs the station taxi), ready for the builder's several cities.
 ## Cut
 
 - **Station taxis in the first package.** The FAQ says they aren't needed. They're added only when the traveler adds a visit on a change day.

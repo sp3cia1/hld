@@ -1,4 +1,3 @@
-import { tripSchema } from '@bh/shared/holiday-package';
 import {
   attractionChoicesResponseSchema,
   changeResponseSchema,
@@ -9,8 +8,6 @@ import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDatabase } from '../../../test/helpers';
 import { createApp } from '../../app';
-import type { Prisma } from '../../generated/prisma/client';
-import { prisma } from '../../lib/prisma';
 
 // Lets a test act between the moment a change reads the package and the moment it saves it, as another tab would.
 const afterRead = vi.hoisted(() => ({ run: async () => {} }));
@@ -162,13 +159,8 @@ describe('POST /api/packages/:id/changes', () => {
 
   it('answers 409 PACKAGE_CONFIRMED for a confirmed package', async () => {
     const id = await build(menon);
-    // Confirming isn't built yet. It will save the trip as BOOKED, so do that here.
-    const stored = await prisma.package.findUniqueOrThrow({ where: { id } });
-    const booked = { ...tripSchema.parse(stored.trip), status: 'BOOKED' };
-    await prisma.package.update({
-      where: { id },
-      data: { trip: booked as Prisma.InputJsonObject },
-    });
+    const confirmed = await request(app).post('/api/reservations').send({ packageId: id });
+    expect(confirmed.status).toBe(201);
 
     const res = await request(app).post(`/api/packages/${id}/changes`).send(lateFlight);
 

@@ -47,8 +47,10 @@ export async function getAttractionChoices(
  * the same package: it needs no Idempotency-Key.
  */
 export async function applyChange(packageId: string, change: ChangeRequest): Promise<ChangeResult> {
-  const { trip, updatedAt } = await loadPackage(packageId);
-  if (trip.status === 'BOOKED') {
+  const { trip, updatedAt, confirmed } = await loadPackage(packageId);
+  // Confirm saves a BOOKED snapshot in the reservation and leaves the package's own trip PLANNED, so "confirmed" is
+  // "has a reservation", not the trip's status.
+  if (confirmed) {
     throw new AppError(
       'PACKAGE_CONFIRMED',
       409,
@@ -65,7 +67,8 @@ export async function applyChange(packageId: string, change: ChangeRequest): Pro
   if (!(await saveTripIfUnchanged(packageId, outcome.trip, updatedAt))) {
     throw new AppError('PACKAGE_CHANGED', 409, 'This holiday changed in another tab. Reload it.');
   }
-  return { result: 'APPLIED', package: toSavedPackage(outcome.trip) };
+  // Only a package that isn't confirmed gets here, so it has no reservation number.
+  return { result: 'APPLIED', package: toSavedPackage(outcome.trip, null) };
 }
 
 async function loadPackage(id: string) {
