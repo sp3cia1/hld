@@ -8,7 +8,8 @@ export function useOptions() {
   return useQuery({ queryKey: ['options'], queryFn: fetchOptions, staleTime: Infinity });
 }
 
-function packageKey(id: string) {
+/** The cache key of a saved package. Anything derived from the package (its change choices) goes under it. */
+export function packageKey(id: string) {
   return ['packages', id];
 }
 

@@ -1,5 +1,5 @@
 import type { Trip } from '@bh/shared/holiday-package';
-import { Link, useParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { Empty } from '@/components/states/empty';
 import { ErrorState } from '@/components/states/error-state';
 import { Loading } from '@/components/states/loading';
@@ -10,10 +10,17 @@ import { BudgetSummary } from '../components/budget-summary';
 import { DayByDay } from '../components/day-by-day';
 import { usePackage } from '../hooks';
 
+/** Set by the request form when it opens a package it just built. A change clears it. */
+export type PackagePageState = { justBuilt: true } | null;
+
 /** The saved package: total against budget, then the day-by-day plan. Survives a refresh and a shared link. */
 export function PackagePage() {
   const { id = '' } = useParams();
   const saved = usePackage(id);
+  const navigate = useNavigate();
+  // "No package fits your budget" is known only for a package as the builder made it: a change can take a package
+  // that fits over the budget. The flag lives in the history entry, so it survives a refresh too.
+  const justBuilt = (useLocation().state as PackagePageState)?.justBuilt === true;
 
   if (saved.isPending) return <Loading label="Opening your holiday…" />;
   if (saved.isError) {
@@ -45,12 +52,19 @@ export function PackagePage() {
       </div>
       {status === 'OVER_BUDGET' && (
         <p role="status" className="rounded-xl bg-caution p-4 text-caution-foreground">
-          No package fits your budget of {formatInr(budget.budgetInr)}. This is the cheapest one we
-          can build. A budget of {formatInr(budget.totalInr)} would cover it.
+          {justBuilt
+            ? `No package fits your budget of ${formatInr(budget.budgetInr)}. This is the cheapest one we can build.`
+            : `This holiday is over your budget of ${formatInr(budget.budgetInr)}.`}{' '}
+          A budget of {formatInr(budget.totalInr)} would cover it.
         </p>
       )}
       <BudgetSummary budget={budget} />
-      <DayByDay items={trip.items} freeTime={freeTime} />
+      <DayByDay
+        packageId={saved.data.data.packageId}
+        items={trip.items}
+        freeTime={freeTime}
+        onChanged={() => void navigate('.', { replace: true, state: null })}
+      />
     </div>
   );
 }
