@@ -28,6 +28,13 @@ describe('POST /api/packages', () => {
     if (data.status === 'NO_PACKAGE') throw new Error('expected a package');
     expect(data.status).toBe('OK');
     expect(data.trip.trip_id).toBe(data.packageId);
+    // G4: the cheapest is also the fastest for Menon, and the best rated is a second package, saved on its own.
+    expect(data.options.map((option) => option.labels)).toEqual([
+      ['CHEAPEST', 'FASTEST'],
+      ['BEST_RATED'],
+    ]);
+    expect(data.options[0]!.packageId).toBe(data.packageId);
+    expect(await prisma.package.count()).toBe(2);
     const sum = data.trip.items.reduce((total, item) => total + item.price_inr, 0);
     expect(data.trip.total_inr).toBe(sum);
     expect(data.budget.leftInr).toBe(data.budget.budgetInr - data.budget.totalInr);
@@ -85,7 +92,10 @@ describe('GET /api/packages/:id', () => {
     const res = await request(app).get(`/api/packages/${built.body.data.packageId}`);
 
     expect(res.status).toBe(200);
-    expect(packageResponseSchema.parse(res.body).data).toEqual(built.body.data);
+    // The build answer also lists every package offered for the request (G4); a saved package doesn't know the others.
+    const { options, ...asBuilt } = built.body.data;
+    expect(options).toHaveLength(2);
+    expect(packageResponseSchema.parse(res.body).data).toEqual(asBuilt);
   });
 
   it('still returns it from a new app, as after a backend restart', async () => {

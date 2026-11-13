@@ -124,6 +124,20 @@ The total is the sum of the parts.
 - **No plan works** → `NO_PACKAGE` (step 5).
 - **On a tie:** fewer cities, then the plan that reaches its first hotel sooner, then plan order. Example: BLR, 7 Apr, 9 nights. Osaka 5 > Kyoto 4 and Kyoto 4 > Osaka 5 both cost ₹2,57,110. Osaka first wins, because the hotel is reached at 12:20 against 13:00.
 
+### Step 4b: the three packages (G4)
+
+The fastest and the best rated reuse the same search with a few choices pinned, and the rest filled at the lowest price,
+so the budget goes as far as it can:
+
+- **Fastest:** travel time is both flights plus every move between cities, so each plan is searched with each flight
+  pair and each mix of moves pinned. The least time within budget wins; on equal time, the cheaper.
+- **Best rated:** stars depend only on the hotels, so each plan is searched with each mix of star levels pinned, each
+  city's stay the cheapest at its level. The highest average stars per night within budget wins; on equal stars, the
+  cheaper.
+- Each city's stays and visits are worked out once per request and reused by every search: the slowest test request
+  takes 0.3 s.
+- A package that earns two labels is offered once with both. When nothing fits the budget, only the cheapest is offered.
+
 ### Step 5: when no package is possible, say why
 
 Each plan stops at the first step it fails. The answer is the reason from the plan that got furthest, in the traveler's words:

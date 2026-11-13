@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { getCatalog } from '../../catalog/catalog.loader';
 import { buildPackage } from './builder.logic';
 import { MENON_EXAMPLE_TRIP } from './menon-example';
+import { summaryOf } from './summary.logic';
+import { validateTrip } from './validator.logic';
 
 const catalog = getCatalog();
 const menon: HolidayRequest = {
@@ -17,13 +19,15 @@ const menon: HolidayRequest = {
 
 describe('buildPackage', () => {
   it('builds the Menon package from the statement', () => {
-    expect(buildPackage(menon, catalog)).toEqual({ status: 'OK', trip: MENON_EXAMPLE_TRIP });
+    expect(buildPackage(menon, catalog)).toMatchObject({ status: 'OK', trip: MENON_EXAMPLE_TRIP });
   });
 
-  it('returns the cheapest package, labelled, when none fits the budget', () => {
+  it('returns only the cheapest package, labelled, when none fits the budget', () => {
+    const trip = { ...MENON_EXAMPLE_TRIP, budget_inr: 1000 };
     expect(buildPackage({ ...menon, budgetInr: 1000 }, catalog)).toEqual({
       status: 'OVER_BUDGET',
-      trip: { ...MENON_EXAMPLE_TRIP, budget_inr: 1000 },
+      trip,
+      options: [{ labels: ['CHEAPEST'], trip }],
     });
   });
 
@@ -118,3 +122,63 @@ function stays(trip: ReturnType<typeof built>) {
     .filter((item) => item.type === 'hotel')
     .map((item) => [item.city, item.start, item.end]);
 }
+
+describe('the three packages (G4)', () => {
+  const uae: HolidayRequest = {
+    ...menon,
+    country: 'AE',
+    startDate: '2027-04-06',
+    budgetInr: 200000,
+  };
+
+  it('offers Menon the cheapest, which is also the fastest, and a 5-star package within budget', () => {
+    const outcome = buildPackage(menon, catalog);
+    if (outcome.status === 'NO_PACKAGE') throw new Error(outcome.reason.message);
+
+    expect(outcome.options.map((option) => option.labels)).toEqual([
+      ['CHEAPEST', 'FASTEST'],
+      ['BEST_RATED'],
+    ]);
+    const [cheapest, bestRated] = outcome.options;
+    expect(cheapest!.trip).toEqual(MENON_EXAMPLE_TRIP);
+    expect(bestRated!.trip.total_inr).toBe(316764);
+    expect(summaryOf(bestRated!.trip, catalog).averageStars).toBe(5);
+  });
+
+  it('offers three packages when each label wins with a different one', () => {
+    // Bengaluru to the UAE, 6 Apr, 6 nights, ₹2,00,000: the cheapest visits two cities, the fastest stays in Abu Dhabi
+    // with no move between cities, and the best rated pays for 4-star hotels.
+    const outcome = buildPackage(uae, catalog);
+    if (outcome.status === 'NO_PACKAGE') throw new Error(outcome.reason.message);
+
+    expect(outcome.options.map((option) => [option.labels, option.trip.total_inr])).toEqual([
+      [['CHEAPEST'], 159728],
+      [['FASTEST'], 161926],
+      [['BEST_RATED'], 192154],
+    ]);
+    const [cheapest, fastest, bestRated] = outcome.options.map((option) =>
+      summaryOf(option.trip, catalog),
+    );
+    expect(fastest!.travelMinutes).toBe(495);
+    expect(fastest!.travelMinutes).toBeLessThan(cheapest!.travelMinutes);
+    expect(bestRated!.averageStars).toBe(4);
+    expect(bestRated!.averageStars).toBeGreaterThan(cheapest!.averageStars);
+  });
+
+  it('keeps every package offered within budget, with every rule true', () => {
+    const requests: HolidayRequest[] = [
+      menon,
+      uae,
+      { ...menon, departureAirport: 'DEL', startDate: '2027-04-01', nights: 5 },
+      { ...menon, startDate: '2027-04-05', nights: 10, budgetInr: 600000 },
+    ];
+    for (const request of requests) {
+      const outcome = buildPackage(request, catalog);
+      if (outcome.status === 'NO_PACKAGE') throw new Error(outcome.reason.message);
+      for (const option of outcome.options) {
+        expect(option.trip.total_inr).toBeLessThanOrEqual(request.budgetInr);
+        expect(validateTrip(option.trip, catalog)).toEqual([]);
+      }
+    }
+  });
+});

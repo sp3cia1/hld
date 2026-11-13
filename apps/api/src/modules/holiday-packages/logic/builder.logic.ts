@@ -1,4 +1,9 @@
-import type { HolidayRequest, NoPackageReason, Trip } from '@bh/shared/holiday-package';
+import type {
+  HolidayRequest,
+  NoPackageReason,
+  PackageLabel,
+  Trip,
+} from '@bh/shared/holiday-package';
 import { key, type Catalog } from '../../catalog/catalog.logic';
 import type { Attraction, Flight, Hotel, Room, Transfer } from '../../catalog/catalog.schemas';
 import { cheapestTransferFromAirport, cheapestTransferToAirport } from './airport-transfers.logic';
@@ -17,13 +22,20 @@ import { addDays, departureAtOrAfter, formatDate, minutesOf } from './time.logic
 import { HOPS_LEAVE_AT, VISITS_START_AT } from './travel-rules';
 import { attractionItem, flightItem, hotelItem, transferItem } from './trip-items.logic';
 
-// Builds a package for a request that passed `checkRequest`: it prices every city plan and keeps the cheapest.
-// ARCHITECTURE.md ("Building a package") explains each step.
+// Builds the packages for a request that passed `checkRequest`: it prices every city plan and offers the cheapest, the
+// fastest and the best rated (G4). ARCHITECTURE.md ("Building a package") explains each step.
 
 export type PlannedTrip = Omit<Trip, 'trip_id'>;
 
+/** A package offered to the traveler, with the labels it earns (G4). */
+export type BuiltOption = { labels: PackageLabel[]; trip: PlannedTrip };
+
+/**
+ * `trip` is the cheapest package; `options` lists every package offered, the cheapest first. When nothing fits the
+ * budget only the cheapest is offered, labelled over budget (M8).
+ */
 export type BuildOutcome =
-  | { status: 'OK' | 'OVER_BUDGET'; trip: PlannedTrip }
+  | { status: 'OK' | 'OVER_BUDGET'; trip: PlannedTrip; options: BuiltOption[] }
   | { status: 'NO_PACKAGE'; reason: NoPackageReason };
 
 /** The steps a plan can fail at, in the order they are tried. The furthest one explains a NO_PACKAGE. */
@@ -39,6 +51,8 @@ type Context = {
   country: { name: string; cities: string[] };
   start: string;
   lastDay: string;
+  /** Each city's stays and visits for given nights, worked out once per request: every search asks for the same ones. */
+  memo: Map<string, unknown>;
 };
 
 /** One city of a plan: the dates the traveler sleeps there, and its full days (every one of those but the first). */
@@ -69,6 +83,14 @@ type PlanPackage = {
   reachesFirstHotel: number;
 };
 type PlanResult = { package: PlanPackage } | { failedAt: Stage; city: string };
+/** A city plan with its cheapest package. */
+type Built = { plan: CityPlan; package: PlanPackage };
+
+/**
+ * Choices fixed before the search fills in the rest at the lowest price. The fastest search fixes the flights and the
+ * move on each change day; the best-rated search fixes the hotel stars in each city.
+ */
+type Pinned = { arrival?: Flight; departure?: Flight; moves?: Transfer[]; stars?: number[] };
 
 export function buildPackage(request: HolidayRequest, catalog: Catalog): BuildOutcome {
   const ctx = contextFor(request, catalog);
@@ -79,15 +101,128 @@ export function buildPackage(request: HolidayRequest, catalog: Catalog): BuildOu
     (from, to) => catalog.intercityTransfers.has(key(from, to)),
   );
   const results = plans.map((plan) => buildForPlan(plan, ctx));
-  const packages = results.flatMap((result) => ('package' in result ? [result.package] : []));
-  if (packages.length === 0) return { status: 'NO_PACKAGE', reason: explain(results, ctx) };
+  const built = plans.flatMap((plan, i): Built[] => {
+    const result = results[i]!;
+    return 'package' in result ? [{ plan, package: result.package }] : [];
+  });
+  if (built.length === 0) return { status: 'NO_PACKAGE', reason: explain(results, ctx) };
 
-  // The cheapest package is within budget whenever any package is.
-  const chosen = best(packages);
-  return {
-    status: chosen.total <= request.budgetInr ? 'OK' : 'OVER_BUDGET',
-    trip: writeTrip(chosen, ctx),
-  };
+  // The cheapest package is within budget whenever any package is. When none is, it is the only one offered.
+  const cheapest = best(built.map((b) => b.package));
+  if (cheapest.total > request.budgetInr) {
+    const trip = writeTrip(cheapest, ctx);
+    return { status: 'OVER_BUDGET', trip, options: [{ labels: ['CHEAPEST'], trip }] };
+  }
+  const options = labelled(
+    [
+      ['CHEAPEST', cheapest],
+      ['FASTEST', fastest(built, cheapest, ctx)],
+      ['BEST_RATED', bestRated(built, cheapest, ctx)],
+    ],
+    ctx,
+  );
+  return { status: 'OK', trip: options[0]!.trip, options };
+}
+
+/**
+ * The package with the least travel time within budget (G4): both flights plus every move between cities. Only the
+ * flights and the moves set the time, so each plan is searched once per flight pair and per mix of moves (the bus or
+ * the taxi on a link that has both), with the rest at the lowest price. On equal time, the cheaper. The search starts
+ * from the cheapest package, which is within budget.
+ */
+function fastest(built: Built[], cheapest: PlanPackage, ctx: Context): PlanPackage {
+  let winner = cheapest;
+  for (const { plan } of built) {
+    const segments = segmentsOf(plan, ctx.start);
+    const links = segments
+      .slice(1)
+      .map(
+        (segment, i) =>
+          ctx.catalog.intercityTransfers.get(key(segments[i]!.city, segment.city)) ?? [],
+      );
+    for (const arrival of arrivalsInto(segments[0]!.city, ctx)) {
+      for (const departure of returnsFrom(segments.at(-1)!.city, ctx)) {
+        for (const moves of combinations(links)) {
+          const result = buildForPlan(plan, ctx, { arrival, departure, moves });
+          if (!('package' in result) || result.package.total > ctx.request.budgetInr) continue;
+          const order =
+            travelMinutes(result.package) - travelMinutes(winner) ||
+            cheaperFirst(result.package, winner);
+          if (order < 0) winner = result.package;
+        }
+      }
+    }
+  }
+  return winner;
+}
+
+/**
+ * The package with the highest average hotel stars within budget (G4). Only the hotels set the stars, so each plan is
+ * searched once per mix of star levels across its cities, with each city's stay the cheapest at its level and the rest
+ * at the lowest price. On equal stars, the cheaper. The search starts from the cheapest package, which is within budget.
+ */
+function bestRated(built: Built[], cheapest: PlanPackage, ctx: Context): PlanPackage {
+  let winner = cheapest;
+  for (const { plan } of built) {
+    const levels = segmentsOf(plan, ctx.start).map((segment) => [
+      ...new Set(
+        remembered('stays', segment, ctx, () => staysIn(segment, ctx)).map(
+          (stay) => stay.hotel.stars,
+        ),
+      ),
+    ]);
+    for (const stars of combinations(levels)) {
+      const result = buildForPlan(plan, ctx, { stars });
+      if (!('package' in result) || result.package.total > ctx.request.budgetInr) continue;
+      // The nights are the same in every plan, so comparing stars × nights compares the averages, without rounding.
+      const order =
+        starNights(winner) - starNights(result.package) || cheaperFirst(result.package, winner);
+      if (order < 0) winner = result.package;
+    }
+  }
+  return winner;
+}
+
+/** Writes each package once: a package that earns two labels is one option with both. */
+function labelled(choices: [PackageLabel, PlanPackage][], ctx: Context): BuiltOption[] {
+  const options: BuiltOption[] = [];
+  for (const [label, chosen] of choices) {
+    const trip = writeTrip(chosen, ctx);
+    const items = JSON.stringify(trip.items);
+    const same = options.find((option) => JSON.stringify(option.trip.items) === items);
+    if (same) same.labels.push(label);
+    else options.push({ labels: [label], trip });
+  }
+  return options;
+}
+
+/** Travel time as G4 counts it: both flights plus every move between cities. Airport transfers don't count. */
+function travelMinutes(p: PlanPackage): number {
+  return (
+    p.stops[0]!.arrival!.flight.duration_minutes +
+    p.stops.at(-1)!.departure!.flight.duration_minutes +
+    sum(p.hops.map((hop) => hop.transfer.duration_minutes))
+  );
+}
+
+/** Each hotel's stars times its nights, added up: the average stars per night, times the trip's nights. */
+function starNights(p: PlanPackage): number {
+  return sum(p.stops.map((stop) => stop.stay.hotel.stars * stop.segment.nights.length));
+}
+
+/** `work()` for this kind and segment, worked out on the first ask and remembered for the rest of the request. */
+function remembered<T>(kind: string, segment: Segment, ctx: Context, work: () => T): T {
+  const id = key(kind, segment.city, segment.nights[0]!, String(segment.nights.length));
+  if (!ctx.memo.has(id)) ctx.memo.set(id, work());
+  return ctx.memo.get(id) as T;
+}
+
+/** Every way to take one item from each list: `[[a, b], [c]]` gives `[a, c]` and `[b, c]`. */
+function combinations<T>(lists: T[][]): T[][] {
+  return lists.reduce<T[][]>(
+    (combos, list) => combos.flatMap((combo) => list.map((item) => [...combo, item])),
+    [[]],
+  );
 }
 
 function contextFor(request: HolidayRequest, catalog: Catalog): Context {
@@ -108,6 +243,7 @@ function contextFor(request: HolidayRequest, catalog: Catalog): Context {
     country: { name: country.name, cities: country.cities.map((c) => c.name) },
     start: request.startDate,
     lastDay: addDays(request.startDate, request.nights),
+    memo: new Map(),
   };
 }
 
@@ -122,22 +258,24 @@ function segmentsOf(plan: CityPlan, start: string): Segment[] {
 }
 
 /** The cheapest valid package for one city plan, or the step and the city where the plan is impossible. */
-function buildForPlan(plan: CityPlan, ctx: Context): PlanResult {
+function buildForPlan(plan: CityPlan, ctx: Context, pinned: Pinned = {}): PlanResult {
   const segments = segmentsOf(plan, ctx.start);
   const first = segments[0]!;
   const last = segments.at(-1)!;
 
-  const arrivals = arrivalsInto(first.city, ctx);
+  const arrivals = pinned.arrival ? [pinned.arrival] : arrivalsInto(first.city, ctx);
   if (arrivals.length === 0) return { failedAt: 'arrival', city: first.city };
-  const returns = returnsFrom(last.city, ctx);
+  const returns = pinned.departure ? [pinned.departure] : returnsFrom(last.city, ctx);
   if (returns.length === 0) return { failedAt: 'return', city: last.city };
 
   // No choice in one city changes the choices in another: a hotel matters only to its own city, and, in the first and
   // last city, to the airport transfer that must serve its area. Trains and buses run station to station. So the
   // cheapest stop in each city, added up, is the cheapest package for the plan, with no combinations to try.
   const stops: Stop[] = [];
-  for (const segment of segments) {
-    const stays = staysIn(segment, ctx);
+  for (const [i, segment] of segments.entries()) {
+    const stays = remembered('stays', segment, ctx, () => staysIn(segment, ctx)).filter(
+      (stay) => !pinned.stars || stay.hotel.stars === pinned.stars[i],
+    );
     if (stays.length === 0) return { failedAt: 'room', city: segment.city };
     const stop = cheapestStop(
       segment,
@@ -152,12 +290,18 @@ function buildForPlan(plan: CityPlan, ctx: Context): PlanResult {
 
   const visits: Visit[][] = [];
   for (const segment of segments) {
-    const planned = planVisits(segment, ctx);
+    const planned = remembered('visits', segment, ctx, () => planVisits(segment, ctx));
     if (!planned) return { failedAt: 'attractions', city: segment.city };
     visits.push(planned);
   }
 
-  const hops = segments.slice(1).map((segment, i) => cheapestHop(segments[i]!.city, segment, ctx));
+  const hops = segments
+    .slice(1)
+    .map((segment, i) =>
+      pinned.moves
+        ? hopBy(pinned.moves[i]!, segment, ctx)
+        : cheapestHop(segments[i]!.city, segment, ctx),
+    );
   const total =
     sum(stops.map((stop) => stop.cost)) +
     sum(hops.map((hop) => hop.price)) +
@@ -308,28 +452,31 @@ function planVisits(segment: Segment, ctx: Context): Visit[] | null {
  * one that arrives sooner.
  */
 function cheapestHop(from: string, segment: Segment, ctx: Context): Hop {
-  const day = segment.nights[0]!;
-  const preferred = minutesOf(HOPS_LEAVE_AT);
   let best: Hop | undefined;
   for (const transfer of ctx.catalog.intercityTransfers.get(key(from, segment.city)) ?? []) {
-    const at = departureAtOrAfter(
-      preferred,
-      transfer.service_from,
-      transfer.service_until,
-      transfer.frequency_minutes ?? 1,
-    );
-    const price = transferPrice(transfer, ctx.party);
-    const arrives = at + transfer.duration_minutes;
+    const hop = hopBy(transfer, segment, ctx);
+    const arrives = hop.at + transfer.duration_minutes;
     if (
       !best ||
-      price < best.price ||
-      (price === best.price && arrives < best.at + best.transfer.duration_minutes)
+      hop.price < best.price ||
+      (hop.price === best.price && arrives < best.at + best.transfer.duration_minutes)
     ) {
-      best = { transfer, day, at, price };
+      best = hop;
     }
   }
   // Plans only join cities that a link in destinations.json connects, and a link lists at least one transfer.
   return best!;
+}
+
+/** The move to the segment's city by `transfer`, on the segment's first day, at the first departure at or after 10:00. */
+function hopBy(transfer: Transfer, segment: Segment, ctx: Context): Hop {
+  const at = departureAtOrAfter(
+    minutesOf(HOPS_LEAVE_AT),
+    transfer.service_from,
+    transfer.service_until,
+    transfer.frequency_minutes ?? 1,
+  );
+  return { transfer, day: segment.nights[0]!, at, price: transferPrice(transfer, ctx.party) };
 }
 
 /**
@@ -337,13 +484,16 @@ function cheapestHop(from: string, segment: Segment, ctx: Context): Hop {
  * first hotel sooner after the flight, then the plan listed first, so results repeat.
  */
 function best(packages: PlanPackage[]): PlanPackage {
-  return packages.reduce((winner, p) => {
-    const order =
-      p.total - winner.total ||
-      p.stops.length - winner.stops.length ||
-      p.reachesFirstHotel - winner.reachesFirstHotel;
-    return order < 0 ? p : winner;
-  });
+  return packages.reduce((winner, p) => (cheaperFirst(p, winner) < 0 ? p : winner));
+}
+
+/** Negative when `a` comes first: cheaper, then fewer cities, then the first hotel reached sooner. */
+function cheaperFirst(a: PlanPackage, b: PlanPackage): number {
+  return (
+    a.total - b.total ||
+    a.stops.length - b.stops.length ||
+    a.reachesFirstHotel - b.reachesFirstHotel
+  );
 }
 
 /** The package in the shared trip format, items in journey order. */

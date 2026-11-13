@@ -44,7 +44,7 @@ export function RequestForm({ options }: { options: Options }) {
     create.mutate(toHolidayRequest(values), {
       onSuccess: ({ data }) => {
         if (data.status === 'NO_PACKAGE') return;
-        const state: PackagePageState = { justBuilt: true };
+        const state: PackagePageState = { justBuilt: true, options: data.options };
         void navigate(`/packages/${data.packageId}`, { state });
       },
       onError: (error) => {
