@@ -2,8 +2,16 @@
 
 Rules for every coding agent in this repo. Read fully before writing code. Keep this file under ~120 lines.
 
-Hackathon starter for a travel-booking full stack. 2 people, about one day. Judges are senior engineers who ask
+Build My Holiday: a travel-booking full stack for a hackathon. 2 people, about one day. Judges are senior engineers who ask
 "why did you do it this way?". Every file you write is copied by the next agent, so write each one as the example.
+
+## Kept out of this repo
+
+- **The starter repo is internal.** Never mention it in this repo: not its name, not "template", "starter" or
+  "boilerplate", and not its example domain (events, tickets). That covers code, comments, docs, UI text, package
+  names and commit messages. You may read and copy its patterns, just never write where they came from. This
+  section and "Start here" are the only exceptions, and both are removed before submission.
+- **Decision records live outside the repo,** in `../decisions/`. Never create `docs/decisions/` here.
 
 ## Priorities (in order)
 
@@ -94,7 +102,7 @@ works, suggest the top 3 by demo impact ÷ effort.
 ## Decision records
 
 Significant decisions only (data model, concurrency and consistency, search approach, new dependency, API shape,
-anything a judge might question) get `docs/decisions/NNNN-title.md`: Context, Decision, Alternatives considered,
+anything a judge might question) get `../decisions/NNNN-title.md` (outside the repo): Context, Decision, Alternatives considered,
 Trade-offs, "30-second answer for judges". Small decisions get one line in your task summary. Write how a decision was
 reached, not only the answer, so it adapts: a number like a page size belongs in an example, never in the rule.
 
@@ -120,4 +128,4 @@ Small commits with clear messages. Never force-push or rewrite history. Never ma
 
 ## More detail
 
-`README.md` | `DESIGN.md` (look and feel) | `docs/decisions/` | `docs/TASK_TEMPLATE.md` | `PROBLEM.md` | `docs/SOLUTION.md` | `docs/DEMO.md` | `docs/IDEAS.md`
+`README.md` | `DESIGN.md` (look and feel) | `../decisions/` (outside the repo) | `docs/TASK_TEMPLATE.md` | `PROBLEM.md` | `docs/SOLUTION.md` | `docs/DEMO.md` | `docs/IDEAS.md`

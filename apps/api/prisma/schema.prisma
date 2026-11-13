@@ -1,0 +1,41 @@
+// Workflow: edit this file, then `npm run db:reset`.
+// We use `db push`, not migrations, on purpose. See ../decisions/0009-db-push-over-migrations.md (outside the repo).
+//
+// The catalog (flights, hotels, transfers, attractions) is read from data/ into memory, never stored here.
+// The database keeps only what must survive a restart: packages and confirmed reservations (docs/SOLUTION.md).
+// First proposal, to settle in the schema session.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// A package the traveler is building. It is one document in the shared trip format, read and written as a whole.
+model Package {
+  id        String   @id @default(cuid())
+  // The 7 request fields, as submitted.
+  request   Json
+  // The package in the shared trip format (DATA_DICTIONARY.md section 4).
+  trip      Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  reservation Reservation?
+}
+
+// A confirmed package. The snapshot never changes after confirm.
+model Reservation {
+  id        String   @id @default(cuid())
+  // 10 digits, first digit 1-9, kept as text so a number can never lose a digit.
+  reference String   @unique
+  // One reservation per package: confirming twice returns the first reservation.
+  packageId String   @unique
+  package   Package  @relation(fields: [packageId], references: [id])
+  // The package at confirm time: every item BOOKED, booking.reference set.
+  trip      Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+}

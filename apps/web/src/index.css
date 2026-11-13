@@ -1,0 +1,99 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/*
+ * Design tokens for the travel-poster look. What each one means and why: DESIGN.md.
+ * Colour carries meaning: teal = go, red = danger, mustard = caution. Never give one of them another job.
+ */
+:root {
+  --radius: 0.75rem;
+
+  /* Paper and ink */
+  --background: #f3e9d6;
+  --foreground: #1f3a5f;
+  --card: #fbf6ec;
+  --card-foreground: #1f3a5f;
+  --muted: #efe3cc;
+  --muted-foreground: #55667a;
+  --secondary: #efe3cc;
+  --secondary-foreground: #34506f;
+  --accent: #efe3cc;
+  --accent-foreground: #1f3a5f;
+
+  /* Meaning */
+  --primary: #24706b;
+  --primary-foreground: #fbf6ec;
+  --destructive: #b83d26;
+  --caution: #f9dfa0;
+  --caution-foreground: #5e4100;
+
+  /* Decoration only (motifs, text selection), never meaning */
+  --sun: #f2b134;
+
+  /* Lines and depth */
+  --border: #1f3a5f;
+  --input: #1f3a5f;
+  --ring: #1f3a5f;
+  --lift: 5px 5px 0 #1f3a5f;
+}
+
+@theme {
+  --font-sans: 'Bricolage Grotesque Variable', ui-sans-serif, system-ui, sans-serif;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@theme inline {
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-caution: var(--caution);
+  --color-caution-foreground: var(--caution-foreground);
+  --color-sun: var(--sun);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --shadow-lift: var(--lift);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    scrollbar-color: var(--muted-foreground) var(--background);
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* Same-width digits everywhere, so times and prices line up without anyone remembering to ask. */
+    font-variant-numeric: tabular-nums;
+    caret-color: var(--primary);
+  }
+  ::selection {
+    background: var(--sun);
+    color: var(--foreground);
+  }
+  /* Headings are styled here so every page gets the poster headline without size classes. */
+  h1 {
+    @apply text-4xl font-extrabold tracking-tight text-balance sm:text-5xl;
+  }
+  h2 {
+    @apply text-xl font-bold tracking-tight text-balance;
+  }
+  a {
+    text-underline-offset: 0.2em;
+  }
+}
