@@ -1,4 +1,4 @@
-import { buildResponseSchema } from '@bh/shared/holiday-package';
+import { buildResponseSchema, packageResponseSchema } from '@bh/shared/holiday-package';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { resetDatabase } from '../../../test/helpers';
@@ -75,5 +75,43 @@ describe('POST /api/packages', () => {
       },
     });
     expect(await prisma.package.count()).toBe(0);
+  });
+});
+
+describe('GET /api/packages/:id', () => {
+  it('returns a saved package exactly as it was built', async () => {
+    const built = await request(app).post('/api/packages').send(menon);
+
+    const res = await request(app).get(`/api/packages/${built.body.data.packageId}`);
+
+    expect(res.status).toBe(200);
+    expect(packageResponseSchema.parse(res.body).data).toEqual(built.body.data);
+  });
+
+  it('still returns it from a new app, as after a backend restart', async () => {
+    const built = await request(app).post('/api/packages').send(menon);
+
+    const res = await request(createApp()).get(`/api/packages/${built.body.data.packageId}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.trip).toEqual(built.body.data.trip);
+  });
+
+  it('keeps the over-budget label', async () => {
+    const built = await request(app)
+      .post('/api/packages')
+      .send({ ...menon, budgetInr: 1000 });
+
+    const res = await request(app).get(`/api/packages/${built.body.data.packageId}`);
+
+    expect(res.body.data.status).toBe('OVER_BUDGET');
+    expect(res.body.data.budget.leftInr).toBeLessThan(0);
+  });
+
+  it('answers 404 NOT_FOUND for an id that no package has', async () => {
+    const res = await request(app).get('/api/packages/no-such-package');
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
   });
 });

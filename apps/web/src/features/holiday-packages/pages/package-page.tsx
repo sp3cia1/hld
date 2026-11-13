@@ -1,34 +1,39 @@
-import { buildResultSchema, type Trip } from '@bh/shared/holiday-package';
-import { Link, useLocation, useParams } from 'react-router';
+import type { Trip } from '@bh/shared/holiday-package';
+import { Link, useParams } from 'react-router';
 import { Empty } from '@/components/states/empty';
+import { ErrorState } from '@/components/states/error-state';
+import { Loading } from '@/components/states/loading';
 import { Button } from '@/components/ui/button';
+import { ApiError } from '@/lib/api-client';
 import { formatInr, formatList, formatLocalDate } from '@/lib/format';
 import { BudgetSummary } from '../components/budget-summary';
 import { DayByDay } from '../components/day-by-day';
+import { usePackage } from '../hooks';
 
-/**
- * The built package: total against budget, then the day-by-day plan.
- * The request form hands the result over in the history entry, because the API can't fetch a package by id yet.
- */
+/** The saved package: total against budget, then the day-by-day plan. Survives a refresh and a shared link. */
 export function PackagePage() {
-  const { id } = useParams();
-  const parsed = buildResultSchema.safeParse(useLocation().state);
+  const { id = '' } = useParams();
+  const saved = usePackage(id);
 
-  if (!parsed.success || parsed.data.status === 'NO_PACKAGE' || parsed.data.packageId !== id) {
-    return (
-      <Empty
-        title="This package isn't open here"
-        description="A package can only be opened right after it is built for now. Build it again from the form."
-        action={
-          <Button asChild variant="outline">
-            <Link to="/">Plan a holiday</Link>
-          </Button>
-        }
-      />
-    );
+  if (saved.isPending) return <Loading label="Opening your holiday…" />;
+  if (saved.isError) {
+    if (saved.error instanceof ApiError && saved.error.code === 'NOT_FOUND') {
+      return (
+        <Empty
+          title="We can't find this holiday"
+          description="Check the link, or plan a new holiday."
+          action={
+            <Button asChild variant="outline">
+              <Link to="/">Plan a holiday</Link>
+            </Button>
+          }
+        />
+      );
+    }
+    return <ErrorState error={saved.error} onRetry={() => void saved.refetch()} />;
   }
 
-  const { trip, budget, status, freeTime } = parsed.data;
+  const { trip, budget, status, freeTime } = saved.data.data;
   return (
     <div className="space-y-8">
       <div className="space-y-2">
