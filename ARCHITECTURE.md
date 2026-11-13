@@ -234,6 +234,35 @@ service: save only if updatedAt is unchanged (else 409 PACKAGE_CHANGED) → APPL
 - **REFUSED is a 200,** like `NO_PACKAGE`: a valid answer to a valid request. A change needs no `Idempotency-Key`,
   because it sets a value ("this hotel"): sending it twice gives the same package.
 
+### Adding and removing visits
+
+The traveler picks the attraction and the day; the app picks the start time and, when needed, the taxi from the
+station (0011). Both run through `tryChange`, so the validator checks the whole package as for hotels and flights.
+
+- **`add_attraction`** `{ date, attractionId }`, on any day from the start date up to the day before the last (400
+  otherwise):
+  1. Refused at once, in the traveler's words, when the attraction is in another city than that night's hotel, is
+     already in the plan, or is closed that weekday or that date.
+  2. **The day begins** at 09:00 (`VISITS_START_AT`) on a full day, and when the family reaches the hotel on the
+     arrival day and a change day (`arrivalsIn` in `logic/free-time.logic.ts`, the same times as the free-time list).
+  3. **The start** is the first that fits of: the start of the day, then the end of each visit already that day. It
+     must be inside the opening hours with the whole visit (`earliestVisit` in `logic/attractions.logic.ts`) and clear
+     of every other visit. None fits: "No time left on 11 Apr 2027: Tokyo Disneyland needs 480 minutes before it
+     closes at 21:00".
+  4. **On a change day by train or bus** with no station taxi yet, the city's `CITY_TAXI` goes in right after the
+     train, picked up at the earliest time at or after the train arrives.
+  5. The visit goes in journey order: after the day's transfers and hotel, among that day's visits by start time. New
+     items take the next unused id (`i11`, `i12`…); no other item is renumbered.
+- **`remove_attraction`** `{ itemId }`: the last visit of a full day is refused ("Every full day keeps at least one
+  visit: add another first, then remove this one"). The last visit of a change day takes the station taxi with it.
+- **Choices for a day** (`GET …/choices/attraction?date=…`): every attraction of that night's city, each previewed
+  with a dry run (READY with its start time, or BLOCKED with the reason). The country's other cities are counted in
+  `hidden`.
+
+Example, Menon on Sun 11 Apr (Senso-ji 09:00–10:00): teamLab Planets starts at 10:00, for +₹5,096 (2 × ₹2,128 + ₹840).
+Tsukiji Outer Market is blocked, "closed on Sundays". Delhi, 1 Apr, 5 nights, on the 3 Apr move to Osaka (Shinkansen
+arrives 12:30): a visit adds the Osaka taxi from the station at 12:30 (₹1,232) and starts at 12:50.
+
 ### The choice lists and the dry run
 
 `GET /api/packages/:id/choices/hotel?city=…` and `GET /api/packages/:id/choices/flight?direction=arrival|return`
