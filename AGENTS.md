@@ -128,4 +128,4 @@ Small commits with clear messages. Never force-push or rewrite history. Never ma
 
 ## More detail
 
-`README.md` | `DESIGN.md` (look and feel) | `../decisions/` (outside the repo) | `docs/TASK_TEMPLATE.md` | `PROBLEM.md` | `docs/SOLUTION.md` | `docs/DEMO.md` | `docs/IDEAS.md`
+`README.md` | `ARCHITECTURE.md` (how a package is built) | `DESIGN.md` (look and feel) | `../decisions/` (outside the repo) | `docs/TASK_TEMPLATE.md` | `PROBLEM.md` | `docs/SOLUTION.md` | `docs/DEMO.md` | `docs/IDEAS.md`

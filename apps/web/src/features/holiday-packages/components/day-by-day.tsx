@@ -1,0 +1,89 @@
+import type { TripItem } from '@bh/shared/holiday-package';
+import { Card, CardContent } from '@/components/ui/card';
+import { formatInr, formatLocalDate } from '@/lib/format';
+
+/** The package day by day (M4): each day that has something on it, items in the package's own time order. */
+export function DayByDay({ items }: { items: TripItem[] }) {
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2>Day by day</h2>
+        <p className="text-sm text-muted-foreground">Every time is local to where it happens.</p>
+      </div>
+      {groupByDay(items).map(({ day, dayItems }) => (
+        <Card key={day}>
+          <CardContent className="space-y-4">
+            <h3 className="text-lg font-bold">{formatLocalDate(day)}</h3>
+            <ul className="divide-y">
+              {dayItems.map((item) => (
+                <ItemRow key={item.item_id} item={item} />
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ))}
+    </section>
+  );
+}
+
+function ItemRow({ item }: { item: TripItem }) {
+  return (
+    <li className="flex gap-4 py-3 first:pt-0 last:pb-0">
+      <p className="w-36 shrink-0 text-sm tabular-nums">{timeLabel(item)}</p>
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className="font-semibold">{item.name}</p>
+        <p className="text-sm text-muted-foreground">{details(item)}</p>
+        {item.warnings.map((warning) => (
+          <p
+            key={warning}
+            className="w-fit rounded-md bg-caution px-2 py-1 text-sm text-caution-foreground"
+          >
+            {warning}
+          </p>
+        ))}
+      </div>
+      <p className="shrink-0 font-semibold tabular-nums">
+        {item.price_inr === 0 ? 'Free' : formatInr(item.price_inr)}
+      </p>
+    </li>
+  );
+}
+
+/** Groups items by the local date they start on, keeping their order. */
+function groupByDay(items: TripItem[]): { day: string; dayItems: TripItem[] }[] {
+  const days: { day: string; dayItems: TripItem[] }[] = [];
+  for (const item of items) {
+    const day = item.start.slice(0, 10);
+    const last = days.at(-1);
+    if (last?.day === day) last.dayItems.push(item);
+    else days.push({ day, dayItems: [item] });
+  }
+  return days;
+}
+
+/** "23:50 – 10:30 next day". A hotel item has dates only, so it reads "Check-in". */
+function timeLabel(item: TripItem): string {
+  if (item.type === 'hotel') return 'Check-in';
+  const start = item.start.slice(11, 16);
+  if (!item.end) return start;
+  const nextDay = item.end.slice(0, 10) > item.start.slice(0, 10) ? ' next day' : '';
+  return `${start} – ${item.end.slice(11, 16)}${nextDay}`;
+}
+
+function details(item: TripItem): string {
+  switch (item.type) {
+    case 'flight':
+      return `Flight to ${item.city} · ${count(item.quantity, 'seat')}`;
+    case 'hotel':
+      return `Hotel in ${item.city} · until ${formatLocalDate(item.end ?? item.start)} · ${count(item.quantity, 'room')}`;
+    // A transfer's quantity is vehicles or tickets depending on how it is priced, so it isn't shown.
+    case 'transfer':
+      return `Transfer in ${item.city}`;
+    case 'attraction':
+      return `Visit in ${item.city} · ${count(item.quantity, 'ticket')}`;
+  }
+}
+
+function count(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}

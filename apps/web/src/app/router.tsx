@@ -1,6 +1,8 @@
 import { createBrowserRouter } from 'react-router';
 import { Empty } from '@/components/states/empty';
 import { StatusPage } from '@/features/health/pages/status-page';
+import { PackagePage } from '@/features/holiday-packages/pages/package-page';
+import { RequestPage } from '@/features/holiday-packages/pages/request-page';
 import { AppShell } from './app-shell';
 import { RouteError } from './route-error';
 
@@ -13,8 +15,8 @@ export const router = createBrowserRouter([
         // Pathless route: a page that crashes shows RouteError inside the shell, not a blank screen.
         errorElement: <RouteError />,
         children: [
-          // The status page stands in for the home page until the request form exists.
-          { path: '/', element: <StatusPage /> },
+          { path: '/', element: <RequestPage /> },
+          { path: '/packages/:id', element: <PackagePage /> },
           { path: '/status', element: <StatusPage /> },
           {
             path: '*',
