@@ -16,9 +16,17 @@ export async function saveTrip(tx: Tx, id: string, trip: Trip) {
   await tx.package.update({ where: { id }, data: { trip: trip as Prisma.InputJsonObject } });
 }
 
-/** The saved trip of a package, or null when no package has this id. */
-export async function findTrip(id: string): Promise<Trip | null> {
-  const row = await prisma.package.findUnique({ where: { id }, select: { trip: true } });
-  // The column is JSON, so the stored trip is read back through the shared schema.
-  return row ? tripSchema.parse(row.trip) : null;
+/**
+ * A saved package: its trip, and its reservation number if it is confirmed. Null when no package has this id.
+ * The trip column is JSON, so the stored trip is read back through the shared schema.
+ */
+export async function findPackage(
+  id: string,
+): Promise<{ trip: Trip; reference: string | null } | null> {
+  const row = await prisma.package.findUnique({
+    where: { id },
+    select: { trip: true, reservation: { select: { reference: true } } },
+  });
+  if (!row) return null;
+  return { trip: tripSchema.parse(row.trip), reference: row.reservation?.reference ?? null };
 }

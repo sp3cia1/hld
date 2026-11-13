@@ -14,7 +14,10 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 }
-
+/** For TanStack Query's `retry`: try once more, except after a 404, which a second try won't change. */
+export function retryUnlessNotFound(failures: number, error: unknown): boolean {
+  return !(error instanceof ApiError && error.status === 404) && failures < 1;
+}
 /** Builds "?a=1&b=2" from params, skipping undefined and empty values. Returns "" when none are left. */
 export function toQueryString(params: Record<string, string | number | undefined>): string {
   const search = new URLSearchParams();

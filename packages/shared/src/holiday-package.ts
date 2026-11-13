@@ -184,13 +184,15 @@ export type BuildResponse = z.infer<typeof buildResponseSchema>;
 
 /**
  * A saved package, as GET /api/packages/:id returns it inside `{ data }`. The same shape as a built package, so the
- * package page shows either one. `status` is OVER_BUDGET whenever the total is above the budget.
+ * package page shows either one. `status` is OVER_BUDGET whenever the total is above the budget. `reference` is the
+ * reservation number once the package is confirmed, otherwise null.
  */
 export const savedPackageSchema = z.object({
   status: z.enum(['OK', 'OVER_BUDGET']),
   packageId: z.string(),
   trip: tripSchema,
   budget: budgetSummarySchema,
+  reference: z.string().nullable(),
   freeTime: z.array(freeTimeSchema),
 });
 export type SavedPackage = z.infer<typeof savedPackageSchema>;
