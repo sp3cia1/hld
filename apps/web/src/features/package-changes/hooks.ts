@@ -1,7 +1,7 @@
 import type { PackageResponse } from '@bh/shared/holiday-package';
 import type { ChangeRequest, FlightDirection } from '@bh/shared/package-change';
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { packageKey } from '@/features/holiday-packages/hooks';
+  import { packageCheckKey, packageKey } from '@/features/holiday-packages/hooks';
 import { applyChange, fetchAttractionChoices, fetchFlightChoices, fetchHotelChoices } from './api';
 
 /** The choices sit under the package's key: they describe that package as it is now. */
@@ -46,6 +46,8 @@ export function useApplyChange(packageId: string) {
       queryClient.setQueryData<PackageResponse>(packageKey(packageId), { data: data.package });
       // Every preview was worked out against the old package. Drop them rather than show stale totals.
       queryClient.removeQueries({ queryKey: choicesKey(packageId) });
+            // The rules panel checked the old package. Check the new one.
+      void queryClient.invalidateQueries({ queryKey: packageCheckKey(packageId) });
     },
   });
 }
