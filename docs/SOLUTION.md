@@ -91,9 +91,11 @@ None found. The profile on 13 Nov showed 0 unreadable records, 0 duplicate IDs a
 - **Request form (`/`):** the 7 fields. Shape errors show on the field before sending; the API's checks against the
   data (nights, dates) come back as field messages too. `NO_PACKAGE` shows its reason under the form, with the
   values kept for editing.
-- **Package page (`/packages/:id`):** the over-budget label (M8), total, budget and amount left or over (M5), and
-  the day-by-day plan (M4). Until `GET /api/packages/:id` exists, the form hands the result over in the browser's
-  history entry: a refresh keeps it, but a copied link shows "This package isn't open here".
+- **Package page (`/packages/:id`):** the over-budget label (M8), total,
+  budget and amount left or over (M5), and the day-by-day plan (M4).
+  Packages are persisted in PostgreSQL and retrieved through
+  `GET /api/packages/:id`. The page supports refreshes, direct navigation,
+  and shared links, including after a backend restart.
 
   - **Validator (`validator.logic.ts`):** `validateTrip(trip, catalog)` returns every broken §4 rule as
     `{ rule, itemId, message }`, and `checkTrip` adds a pass/fail line per rule for the rules panel. The 12 rules and
