@@ -1,9 +1,9 @@
-import type { BuildResult, HolidayRequest, Trip } from '@bh/shared/holiday-package';
+import type { BuildResult, HolidayRequest, SavedPackage, Trip } from '@bh/shared/holiday-package';
 import { AppError } from '../../lib/app-error';
 import { runInTransaction } from '../../lib/transaction';
 import { getCatalog } from '../catalog/catalog.loader';
 import { buildPackage } from './builder.logic';
-import { insertPackage, saveTrip } from './holiday-packages.repository';
+import { findTrip, insertPackage, saveTrip } from './holiday-packages.repository';
 import { checkRequest } from './request.logic';
 
 /** Checks the request against the data, builds the package, and saves it unless none is possible. */
@@ -25,8 +25,23 @@ export async function createPackage(request: HolidayRequest): Promise<BuildResul
     return saved;
   });
 
+  return toSavedPackage(trip);
+}
+
+/** A saved package by its id. A refresh, a shared link and a backend restart all read it from here. */
+export async function getPackage(id: string): Promise<SavedPackage> {
+  const trip = await findTrip(id);
+  if (!trip) throw new AppError('NOT_FOUND', 404, 'No package has this id');
+  return toSavedPackage(trip);
+}
+
+/**
+ * The package with its total against the budget (M5). It is OVER_BUDGET exactly when the total is above the budget:
+ * at build time that is the case only when no package fits (M8), and a total equal to the budget is within it.
+ */
+function toSavedPackage(trip: Trip): SavedPackage {
   return {
-    status: outcome.status,
+    status: trip.total_inr <= trip.budget_inr ? 'OK' : 'OVER_BUDGET',
     packageId: trip.trip_id,
     trip,
     budget: {

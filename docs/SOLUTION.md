@@ -91,9 +91,17 @@ None found. The profile on 13 Nov showed 0 unreadable records, 0 duplicate IDs a
 - **Request form (`/`):** the 7 fields. Shape errors show on the field before sending; the API's checks against the
   data (nights, dates) come back as field messages too. `NO_PACKAGE` shows its reason under the form, with the
   values kept for editing.
-- **Package page (`/packages/:id`):** the over-budget label (M8), total, budget and amount left or over (M5), and
-  the day-by-day plan (M4). Until `GET /api/packages/:id` exists, the form hands the result over in the browser's
-  history entry: a refresh keeps it, but a copied link shows "This package isn't open here".
+- **Package page (`/packages/:id`):** the over-budget label (M8), total,
+  budget and amount left or over (M5), and the day-by-day plan (M4).
+  Packages are persisted in PostgreSQL and retrieved through
+  `GET /api/packages/:id`. The page supports refreshes, direct navigation,
+  and shared links, including after a backend restart.
+
+  - **Validator (`validator.logic.ts`):** `validateTrip(trip, catalog)` returns every broken §4 rule as
+    `{ rule, itemId, message }`, and `checkTrip` adds a pass/fail line per rule for the rules panel. The 12 rules and
+    their titles are in `packages/shared/src/trip-check.ts`. Written from the statement, not the builder, and imports
+    none of the builder's helpers, so it is a real second check. It already covers city changes (one link transfer on
+    its timetable; a visit that day needs the station taxi), ready for v2.
 
 ## Cut
 
@@ -108,5 +116,10 @@ Numbers and checks that show it works.
 
 - **Menon:** the builder returns exactly the hand-checked package in `menon-example.ts`: Tokyo, ₹2,19,324 of ₹3,50,000. A unit test checks it.
 - **Independent rule check (13 Nov):** 2,221 packages from the builder, checked against every §4 rule by a separate script written from the rules text. **0 problems.** The packages covered every departure city, both countries, every start date and trip length, and 4 kinds of party: 1 adult; 2 adults + 1 child; 4 adults + 3 children with a 17-year-old; 3 adults + an infant.
+- **Validator in the test suite:** `validator.logic.test.ts` builds every request for 3 parties (1,867 packages)
+  and validates each: 0 problems. It also breaks the Menon package 12 ways (a pickup too soon after landing, a full
+  day with no visit, a closed weekday, a twin room for a family…) and each is caught under the right rule. A
+  hand-built Tokyo → Kyoto trip passes, and a train off its timetable, a missing train and a visit without the
+  station taxi are caught.
 - **Attraction assignment:** the Hungarian algorithm gives the same optimum as trying every assignment, on 3,000 random cases.
 - **Still to fill:** the rehearsed judge requests.
