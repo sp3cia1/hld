@@ -41,9 +41,10 @@ export async function getPackage(id: string): Promise<SavedPackage> {
 
 /**
  * The package with its total against the budget (M5). It is OVER_BUDGET exactly when the total is above the budget:
- * at build time that is the case only when no package fits (M8), and a total equal to the budget is within it.
+ * at build time that is the case only when no package fits (M8), after a change also when the traveler's choices cost
+ * more. A total equal to the budget is within it. A built, a loaded and a changed package all go through here.
  */
-function toSavedPackage(trip: Trip): SavedPackage {
+export function toSavedPackage(trip: Trip): SavedPackage {
   return {
     status: trip.total_inr <= trip.budget_inr ? 'OK' : 'OVER_BUDGET',
     packageId: trip.trip_id,
