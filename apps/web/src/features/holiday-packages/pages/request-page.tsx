@@ -2,10 +2,11 @@ import { ErrorState } from '@/components/states/error-state';
 import { Loading } from '@/components/states/loading';
 import { Motif } from '@/components/motif';
 import { Card, CardContent } from '@/components/ui/card';
+import { LookupForm } from '@/features/reservations/components/lookup-form';
 import { RequestForm } from '../components/request-form';
 import { useOptions } from '../hooks';
 
-/** The home page: where a holiday starts. */
+/** The home page: where a holiday starts, and where a booked one is found again. */
 export function RequestPage() {
   const options = useOptions();
 
@@ -31,6 +32,10 @@ export function RequestPage() {
           </CardContent>
         </Card>
       )}
+      <section className="space-y-3 pt-4">
+        <h2>Already booked?</h2>
+        <LookupForm />
+      </section>
     </div>
   );
 }

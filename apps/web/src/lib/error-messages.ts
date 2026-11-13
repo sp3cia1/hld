@@ -10,6 +10,8 @@ const messages: Record<string, string> = {
   NOT_FOUND: 'We could not find what you were looking for.',
   IDEMPOTENCY_KEY_REUSED:
     'We could not process that request. Please reload the page and try again.',
+      PACKAGE_INVALID:
+    'This holiday no longer meets every travel rule, so it can’t be booked. Please build it again.',
   SERVICE_UNAVAILABLE: 'The service is temporarily unavailable. Please try again in a moment.',
   INTERNAL: 'Something went wrong on our side. Please try again.',
 };

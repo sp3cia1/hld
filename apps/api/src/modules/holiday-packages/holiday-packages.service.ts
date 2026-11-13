@@ -1,4 +1,3 @@
-
 import type { BuildResult, HolidayRequest, SavedPackage, Trip } from '@bh/shared/holiday-package';
 import { AppError } from '../../lib/app-error';
 import { runInTransaction } from '../../lib/transaction';
@@ -7,7 +6,6 @@ import { budgetOf } from './budget.logic';
 import { buildPackage } from './builder.logic';
 import { findPackage, insertPackage, saveTrip } from './holiday-packages.repository';
 import { checkRequest } from './request.logic';
-import { validateTrip } from './validator.logic';
 
 /** Checks the request against the data, builds the package, and saves it unless none is possible. */
 export async function createPackage(request: HolidayRequest): Promise<BuildResult> {
@@ -20,18 +18,6 @@ export async function createPackage(request: HolidayRequest): Promise<BuildResul
 
   const outcome = buildPackage(request, catalog);
   if (outcome.status === 'NO_PACKAGE') return outcome;
-
-  // Validate the generated package before saving or returning it.
-  const problems = validateTrip(outcome.trip, catalog);
-
-  if (problems.length > 0) {
-    throw new AppError(
-      'PACKAGE_INVALID',
-      500,
-      'Generated package failed validation',
-      { problems },
-    );
-  }
 
   const trip = await runInTransaction(async (tx) => {
     const id = await insertPackage(tx, request, outcome.trip);
