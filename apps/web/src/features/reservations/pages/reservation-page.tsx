@@ -45,7 +45,8 @@ export function ReservationPage() {
         </CardContent>
       </Card>
       <BudgetSummary budget={budget} />
-      <DayByDay items={trip.items} />
+            {/* A booked holiday is read-only, so it offers no free-time suggestions. */}
+      <DayByDay items={trip.items} freeTime={[]} />
     </div>
   );
 }

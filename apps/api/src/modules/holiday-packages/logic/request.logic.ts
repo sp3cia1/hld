@@ -1,6 +1,6 @@
 import type { FieldError } from '@bh/shared/common';
 import type { HolidayRequest } from '@bh/shared/holiday-package';
-import type { Catalog } from '../catalog/catalog.logic';
+import type { Catalog } from '../../catalog/catalog.logic';
 import { addDays, formatDate } from './time.logic';
 
 /**

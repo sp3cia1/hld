@@ -2,12 +2,16 @@ import type { BuildResult, HolidayRequest, SavedPackage, Trip } from '@bh/shared
 import { AppError } from '../../lib/app-error';
 import { runInTransaction } from '../../lib/transaction';
 import { getCatalog } from '../catalog/catalog.loader';
-import { budgetOf } from './budget.logic';
-import { buildPackage } from './builder.logic';
 import { findPackage, insertPackage, saveTrip } from './holiday-packages.repository';
-import { checkRequest } from './request.logic';
+import { budgetOf } from './logic/budget.logic';
+import { buildPackage } from './logic/builder.logic';
+import { freeTimeIn } from './logic/free-time.logic';
+import { checkRequest } from './logic/request.logic';
 
-/** Checks the request against the data, builds the package, and saves it unless none is possible. */
+/**
+ * Checks the request against the data, builds the package, and saves it unless none is possible. A package comes
+ * back with the free time on the days it leaves open.
+ */
 export async function createPackage(request: HolidayRequest): Promise<BuildResult> {
   const catalog = getCatalog();
 
@@ -37,8 +41,9 @@ export async function getPackage(id: string): Promise<SavedPackage> {
 }
 
 /**
- * The package with its total against the budget (M5). It is OVER_BUDGET exactly when the total is above the budget:
- * at build time that is the case only when no package fits (M8), and a total equal to the budget is within it.
+ * The package with its total against the budget (M5), its reservation number once confirmed, and the free time on
+ * the days it leaves open. It is OVER_BUDGET exactly when the total is above the budget: at build time that is the
+ * case only when no package fits (M8), and a total equal to the budget is within it.
  */
 function toSavedPackage(trip: Trip, reference: string | null): SavedPackage {
   return {
@@ -47,5 +52,6 @@ function toSavedPackage(trip: Trip, reference: string | null): SavedPackage {
     trip,
     budget: budgetOf(trip),
     reference,
+    freeTime: freeTimeIn(trip, getCatalog()),
   };
 }

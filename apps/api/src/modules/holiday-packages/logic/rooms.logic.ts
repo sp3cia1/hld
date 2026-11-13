@@ -1,4 +1,4 @@
-import type { Room } from '../catalog/catalog.schemas';
+import type { Room } from '../../catalog/catalog.schemas';
 import { travelersIn, type Party } from './pricing.logic';
 
 /**

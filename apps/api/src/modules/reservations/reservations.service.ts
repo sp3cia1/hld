@@ -2,9 +2,9 @@ import { RESERVATION_NUMBER, type Reservation } from '@bh/shared/reservation';
 import { randomInt } from 'node:crypto';
 import { AppError } from '../../lib/app-error';
 import { getCatalog } from '../catalog/catalog.loader';
-import { budgetOf } from '../holiday-packages/budget.logic';
+import { budgetOf } from '../holiday-packages/logic/budget.logic';
 import { findPackage } from '../holiday-packages/holiday-packages.repository';
-import { validateTrip } from '../holiday-packages/validator.logic';
+import { validateTrip } from '../holiday-packages/logic/validator.logic';
 import { bookTrip, newReference } from './reservation.logic';
 import {
   findReservationByPackage,

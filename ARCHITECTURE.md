@@ -21,9 +21,9 @@ API (Express): route → controller → service → logic → repository
 - **Postgres:** keeps what must survive a restart: packages and confirmed reservations.
 - **The package:** stored, sent to the screens and exported in one shape, the shared trip format (`DATA_DICTIONARY.md` §4). It lives in `packages/shared/src/holiday-package.ts`.
 
-## Building a package, v1 (one city)
+## Building a package
 
-v1 builds packages that stay in one city. v2 adds plans with several cities (see the end of this section).
+The builder tries every plan of one, two or three cities and keeps the cheapest valid package.
 
 ### Words used below
 
@@ -35,7 +35,7 @@ v1 builds packages that stay in one city. v2 adds plans with several cities (see
 | Full days      | Every day after the arrival day and before the last day         | 11–15 Apr            |
 | Travelers `T`  | Adults + children. Every child needs a seat                     | 3                    |
 
-The numbers in the travel rules (60 and 180 minutes, the 09:00 start of a full day) live in `apps/api/src/modules/holiday-packages/travel-rules.ts`. The builder is `builder.logic.ts` next to it.
+The numbers in the travel rules (60 and 180 minutes, the 09:00 start of a full day, the 10:00 city-change departure) live in `apps/api/src/modules/holiday-packages/logic/travel-rules.ts`. The plans are listed by `plans.logic.ts` and the builder is `builder.logic.ts`, next to it in `holiday-packages/logic/`.
 
 ### Step 1: check the request
 
@@ -49,23 +49,23 @@ Each failure is a message on its field (400 `VALIDATION_ERROR`). No limit is wri
 
 ### Step 2: list the city plans
 
-In v1, each city of the country is one plan, with all the nights. One city always meets "at least 2 nights per city", because a trip has at least 3 nights.
+`plans.logic.ts` lists the plans. A plan is a list of distinct cities from `destinations.json`, each used once and each linked (`links`) to the next, with at least `min_nights_per_city` nights in each, adding up to the trip. For 6 nights in Japan that is 27 plans (3 with one city, 18 with two, 6 with three). A 10-night trip has 135, and the UAE has at most 16. A one-city plan always exists, because a trip has at least 3 nights.
 
-### Step 3: find the cheapest valid package for each city
+### Step 3: find the cheapest valid package for each plan
 
 **a. Flights.**
 
-- **Arrival:** from the departure airport, landing on `S` (local) at an airport whose `serves_cities` includes the city, with `seats_left ≥ T`.
-- **Return:** leaving on `L` (local) from an airport serving the city, to the departure airport, with `seats_left ≥ T`.
+- **Arrival:** from the departure airport, landing on `S` (local) at an airport whose `serves_cities` includes the **first** city of the plan, with `seats_left ≥ T`.
+- **Return:** leaving on `L` (local) from an airport serving the **last** city of the plan, to the departure airport, with `seats_left ≥ T`.
 - Arrival and return airports may differ.
 
-**b. Hotel rooms.** For every room type in the city's hotels:
+**b. Hotel rooms.** Each city is priced on its own nights. For every room type in the city's hotels:
 
 - **The fewest rooms `k` that fit:** `k = max(⌈adults ÷ max_adults⌉, ⌈travelers ÷ (max_adults + max_children)⌉)`. The room type fits only if `k ≤ adults`. Within one room type, the smallest `k` is always best, because both the price and the rooms needed grow with `k`.
-- **Free on every night:** `rooms_left ≥ k` on every hotel night. A missing night counts as 0.
-- **Price:** `price_per_night × k × nights`.
+- **Free on every night:** `rooms_left ≥ k` on every one of the city's nights. A missing night counts as 0.
+- **Price:** `price_per_night × k × the city's nights`.
 
-**c. Airport transfers.** They must match the flight's airport, the city, and the hotel's area (`area: null` serves every area). Transfers run in both directions.
+**c. Airport transfers.** They apply in the first city (arriving) and the last city (leaving) only. They must match the flight's airport, the city, and the hotel's area (`area: null` serves every area). Transfers run in both directions.
 
 - **Arriving:**
   - The pickup is the **earliest** time at or after landing + 60 min that falls inside the service hours: landing + 60 itself, or the opening time if that's later.
@@ -76,57 +76,68 @@ In v1, each city of the country is one plan, with all the nights. One city alway
   - The traveler leaves at the **latest** time no later than that which is inside the service hours, on the last day itself.
   - If no such time exists, that flight doesn't work with that hotel.
 
-**d. Combine.**
+**d. Combine, city by city.**
 
-- For each room option, take the cheapest arrival flight + its transfer, and the cheapest return flight + its transfer. One city has one hotel, so the two halves don't affect each other, and taking the best of each is exact.
-- The city's best is the cheapest room + arrival half + return half.
+- No choice in one city changes another. A hotel affects only its own city's price, and only the first city's hotel affects the arrival transfer and only the last city's hotel affects the return transfer. So the cheapest choice per city, added up, is exact.
+- In the first city, for each room option, take the cheapest arrival flight + its transfer. In the last city, do the same for the return flight. A plan with one city does both in the same hotel. Middle cities need only a room.
+- The plan's best is the sum of its cities' cheapest options and the moves between them.
 - On a tie, the earlier record in the catalog wins, so results repeat.
 
-**e. Attractions: one on each full day.**
+**Between cities.** The move from one city to the next leaves on the change day, from the timetable in `destinations.json`:
+
+- **Train or bus:** the first departure at or after 10:00 (`HOPS_LEAVE_AT`): `service_from` plus whole steps of `frequency_minutes`. If the service stops earlier than that, the last departure of the day.
+- **Taxi:** any time, so it leaves at 10:00.
+- **Choosing:** the cheapest move, then the one that arrives sooner.
+- **Reaching the new hotel:** by train or bus, the arrival time at the station plus that city's station taxi time; by door-to-door taxi, its arrival time.
+
+**e. Attractions: one on each full day of each city.**
 
 - **What's possible:**
-  - An attraction can go on a day if it is in the city, open that weekday (`open_days`), and not on a `closed_dates` date.
+  - An attraction can go on a day if it is in that day's city, open that weekday (`open_days`), and not on a `closed_dates` date.
   - The visit starts at 09:00, or at opening time if that's later. It must end by `open_until`.
-  - None on the arrival day (optional, left empty) and none on the last day (not allowed).
+  - None on the arrival day or on a change day (optional, left empty; the package page lists what still fits that day instead, from
+    `logic/free-time.logic.ts`) and none on the last day (not allowed).
 - **How they're picked:**
-  - Each full day needs a different attraction, at the lowest total price. That's the **assignment problem**: days × attractions, the cost is the price, and the pair is forbidden where the attraction can't go that day.
-  - It's solved exactly with the **Hungarian algorithm** (`attractions.logic.ts`), in O(days² × attractions). A city has at most about 15 attractions, so that's instant.
+  - Each city's full days need different attractions, at the lowest total price. That's the **assignment problem**: days × attractions, the cost is the price, and the pair is forbidden where the attraction can't go that day.
+  - It's solved exactly with the **Hungarian algorithm** (`logic/attractions.logic.ts`), in O(days² × attractions). A city has at most about 15 attractions, so that's instant.
   - Picking day by day fails. If day 1 takes the free attraction that day 2 also needs, day 2 gets nothing or pays more. In tests on the real data, a day-by-day pick overpaid by up to ₹1,120: on Monday 12 Apr most free attractions are closed.
   - On equal price, the attraction listed first in the catalog wins.
-- **No match:** if some full day can't get an attraction, the city fails.
+- **No match:** if some full day can't get an attraction, the plan fails.
 
 **f. Prices.** All whole INR.
 
 | Part                    | Price                                                                                  |
 | ----------------------- | -------------------------------------------------------------------------------------- |
 | Flight                  | `price_per_seat × T` (children pay the same)                                           |
-| Hotel                   | `price_per_night × k × nights`                                                         |
+| Hotel                   | `price_per_night × k × the city's nights`                                              |
 | Transfer, `PER_PERSON`  | `adults × price + children × (child_price, or price if missing)`                       |
 | Transfer, `PER_VEHICLE` | `price × ⌈T ÷ max_passengers⌉`                                                         |
+| City change             | The timetable price, `PER_PERSON` or `PER_VEHICLE`, as for a transfer                  |
 | Attraction              | `adults × price_per_person + children × (child_price, or price_per_person if missing)` |
 
 The total is the sum of the parts.
 
 ### Step 4: choose
 
-- **At least one city is within budget** (total ≤ budget): the cheapest wins → `OK`.
-- **Cities work, but none is within budget:** the cheapest wins, labelled → `OVER_BUDGET`. It's still saved and can be confirmed.
-- **No city works** → `NO_PACKAGE` (step 5).
+- **At least one plan is within budget** (total ≤ budget): the cheapest wins → `OK`.
+- **Plans work, but none is within budget:** the cheapest wins, labelled → `OVER_BUDGET`. It's still saved and can be confirmed.
+- **No plan works** → `NO_PACKAGE` (step 5).
+- **On a tie:** fewer cities, then the plan that reaches its first hotel sooner, then plan order. Example: BLR, 7 Apr, 9 nights. Osaka 5 > Kyoto 4 and Kyoto 4 > Osaka 5 both cost ₹2,57,110. Osaka first wins, because the hotel is reached at 12:20 against 13:00.
 
 ### Step 5: when no package is possible, say why
 
-Each city stops at the first step it fails. The answer is the reason from the city that got furthest, in the traveler's words:
+Each plan stops at the first step it fails. The answer is the reason from the plan that got furthest, in the traveler's words:
 
-| Stopped at       | Code                | Message, for example                                                                                                                                             |
-| ---------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Arrival flight   | `NO_ARRIVAL_FLIGHT` | "No flight from Chennai lands in Japan on 10 Apr 2027."                                                                                                          |
-|                  | `NO_ARRIVAL_SEATS`  | "No flight from Delhi landing in Japan on 1 Apr 2027 has 5 seats left."                                                                                          |
-| Return flight    | `NO_RETURN_FLIGHT`  | "No flight back to Mumbai leaves Japan on 4 Apr 2027."                                                                                                           |
-|                  | `NO_RETURN_SEATS`   | The same, when flights exist without enough seats                                                                                                                |
-|                  | `NO_COMMON_CITY`    | "On 2 Apr 2027 flights land only at NRT, and on 5 Apr 2027 flights back leave only from KIX. No city is served by both." (v1 only: v2 can go through two cities) |
-| Hotel room       | `NO_ROOM`           | "No hotel in Osaka has rooms for 2 adults and 1 child free on every night."                                                                                      |
-| Airport transfer | `NO_TRANSFER`       | "No airport transfer in Osaka runs at the times these flights need."                                                                                             |
-| Attractions      | `NO_ATTRACTIONS`    | "Not enough different attractions are open in Osaka to fill every full day."                                                                                     |
+| Stopped at       | Code                | Message, for example                                                         |
+| ---------------- | ------------------- | ---------------------------------------------------------------------------- |
+| Arrival flight   | `NO_ARRIVAL_FLIGHT` | "No flight from Chennai lands in Japan on 10 Apr 2027."                      |
+|                  | `NO_ARRIVAL_SEATS`  | "No flight from Delhi landing in Japan on 1 Apr 2027 has 5 seats left."      |
+| Return flight    | `NO_RETURN_FLIGHT`  | "No flight back to Mumbai leaves Japan on 4 Apr 2027."                       |
+|                  | `NO_RETURN_SEATS`   | The same, when flights exist without enough seats                            |
+|                  |                     | `NO_COMMON_CITY`                                                             | "On 2 Apr 2027 flights land only at NRT, and on 5 Apr 2027 flights back leave only from KIX. No city is served by both, and 3 nights is too short for two cities: each needs at least 2." |
+| Hotel room       | `NO_ROOM`           | "No hotel in Osaka has rooms for 2 adults and 1 child free on every night."  |
+| Airport transfer | `NO_TRANSFER`       | "No airport transfer in Osaka runs at the times these flights need."         |
+| Attractions      | `NO_ATTRACTIONS`    | "Not enough different attractions are open in Osaka to fill every full day." |
 
 ### Step 6: write the package
 
@@ -134,22 +145,29 @@ The package is written in the trip format, in **journey order**:
 
 1. arrival flight;
 2. transfer to the hotel;
-3. hotel (`start` = check-in date, `end` = check-out date, `room_id`, `quantity` = `k`);
-4. attractions by date;
-5. transfer to the airport;
-6. return flight.
+3. for each city in turn: the move from the previous city (not for the first city), the hotel (`start` = check-in date, `end` = check-out date, `room_id`, `quantity` = `k`), then its attractions by date;
+4. transfer to the airport;
+5. return flight.
 
 The items are written in that order rather than sorted, because a hotel's date-only `start` would sort before the same day's times.
 
-Times are local, without seconds (`YYYY-MM-DDTHH:MM`). A flight's `city` is where it lands. Every item is `PLANNED`.
+Times are local, without seconds (`YYYY-MM-DDTHH:MM`). A flight's `city` is where it lands, and a move between cities has the city it arrives in. Every item is `PLANNED`.
 
 ### How big the search is
 
-Per city: room types × (arrival flights + return flights) × transfers, which is a few thousand checks. The builder answers 864 requests in about 80 ms (13 Nov). The requests covered every departure city, both countries, every start date and trip length, with 2 adults and 1 child.
+For Menon, over the 27 plans:
+
+| Way of searching                                   | Work                                                  |
+| -------------------------------------------------- | ----------------------------------------------------- |
+| Every combination of hotels, flights and transfers | 6,990,380 packages                                    |
+| City by city (what the builder does)               | 1,401 room options + 3,296 flight-and-transfer checks |
+| One city only                                      | 69 room options + 344 checks                          |
+
+City by city is about 1,500× less work than every combination, for the same answer. The builder answers the 864 test requests in about 0.6 s (under 1 ms each). One city alone took 62 ms. The requests covered every departure city, both countries, every start date and trip length, with 2 adults and 1 child.
 
 ### Worked example: Menon
 
-This is what v1 returns. Checked by running this logic on the catalog on 13 Nov.
+Checked by running this logic on the catalog. The best plan is still one city.
 
 | Part        | Choice                                                           | ₹            |
 | ----------- | ---------------------------------------------------------------- | ------------ |
@@ -167,23 +185,17 @@ Why these won:
 - **Tokyo** wins on flights: ₹1,56,240, against ₹1,81,440 for Osaka or Kyoto through `KIX`.
 - **`FL-403`** is cheaper per seat but has only 2 seats left.
 - **`FL-405`** is ₹3,780 cheaper for 3 seats, but it lands at 21:30. The bus stops at 22:00 and the pickup can't be before 22:30, so it needs a taxi costing ₹8,400 more.
+- **Tokyo 2 > Osaka 4** is ₹2,30,440. It saves ₹7,392 on hotels and ₹2,520 on the flight, but the Shinkansen costs ₹20,608.
 
-### What v1 can't do yet
+### Worked example: Delhi, 1 Apr, 5 nights
 
-The same 864-request run, with 2 adults and 1 child and no budget limit:
+The best plan is **Tokyo 2 > Osaka 3**: the Shinkansen leaves at 10:00 on 3 Apr, and the total is ₹2,83,060.
 
-- **Every request worked:** from Bengaluru to Japan, and from every city to the UAE.
-- **From Mumbai, Delhi and Chennai to Japan:**
-  - 136 requests have no flight at one end. No version can build those, so "no package" is correct.
-  - **77 more have flights at both ends, at airports that serve no city in common** (for example, landing at `KIX` and leaving from `NRT` or `HND`). v1 says "no package". A plan with two cities, such as Osaka then Tokyo, may serve them. That's v2.
+### What several cities change
 
-### v2: plans with several cities
+The same 864-request run, with 2 adults and 1 child and no budget limit, against the builder with one city only:
 
-- **The plans:** every order of distinct cities in the country, each linked to the next (`links` in `destinations.json`), at least `min_nights_per_city` nights each, adding up to the trip. That's 27 plans for 6 nights in Japan.
-- The arrival flight serves the first city, and the return flight serves the last city.
-- Each city gets its own hotel and its own attractions on its full days.
-- **On a city-change day**, the transfer between the cities leaves at the first departure at or after 10:00 on its timetable (first departure + whole steps of `frequency_minutes`), inside the service hours.
-- **When the traveler reaches the new hotel:**
-  - by train or bus: the arrival time at the station, plus that city's station taxi time;
-  - by door-to-door taxi: its arrival time.
-- **Choosing:** the same as step 4. On a tie, fewer city changes wins.
+- **61 more requests get a package** (712 against 651). Their flights land at and leave from airports that serve no city in common (for example, landing at `KIX` and leaving from `NRT`), so only a plan with two cities can serve them.
+- **16 still don't, all 3-night trips.** Three nights is too short for two cities.
+- **345 packages use two or three cities.**
+- **284 are cheaper than one city.** The median saving is ₹5,530 in Japan and ₹10,099 in the UAE.

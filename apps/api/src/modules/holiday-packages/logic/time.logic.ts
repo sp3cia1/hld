@@ -48,6 +48,23 @@ export function latestInWindow(time: number, from: string, until: string): numbe
   return best;
 }
 
+/**
+ * The first departure at or after `preferred` (minutes after midnight) of a service that runs from `from` to `until`
+ * and leaves every `every` minutes (1 for a taxi, which leaves at any time), or its last departure when it stops
+ * before `preferred`. A service window is never empty, so there is always a departure.
+ */
+export function departureAtOrAfter(
+  preferred: number,
+  from: string,
+  until: string,
+  every: number,
+): number {
+  const [start, end] = windowOf(from, until);
+  if (preferred <= start) return start;
+  const next = start + Math.ceil((preferred - start) / every) * every;
+  return next <= end ? next : start + Math.floor((end - start) / every) * every;
+}
+
 /** `2027-04-30` plus 1 day is `2027-05-01`. */
 export function addDays(date: string, days: number): string {
   return asUtcDate(date, days).toISOString().slice(0, 10);

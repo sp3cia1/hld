@@ -34,7 +34,7 @@ export function PackagePage() {
     return <ErrorState error={saved.error} onRetry={() => void saved.refetch()} />;
   }
 
-  const { trip, budget, status } = saved.data.data;
+  const { trip, budget, status, freeTime } = saved.data.data;
   return (
     <div className="space-y-8">
       <TripHeading title={`Your holiday in ${trip.country}`} trip={trip} />
@@ -44,9 +44,9 @@ export function PackagePage() {
           can build. A budget of {formatInr(budget.totalInr)} would cover it.
         </p>
       )}
-      <BudgetSummary budget={budget} />
+      <BudgetSummary budget={budget} />      <BudgetSummary budget={budget} />
       <ConfirmPanel saved={saved.data.data} />
-      <DayByDay items={trip.items} />
+      <DayByDay items={trip.items} freeTime={freeTime} />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import type { TripItem } from '@bh/shared/holiday-package';
 import { RULE_IDS } from '@bh/shared/trip-check';
 import { describe, expect, it } from 'vitest';
-import { getCatalog } from '../catalog/catalog.loader';
+import { getCatalog } from '../../catalog/catalog.loader';
 import { buildPackage } from './builder.logic';
 import { MENON_EXAMPLE_TRIP } from './menon-example';
 import { checkTrip, validateTrip, type TripToCheck } from './validator.logic';

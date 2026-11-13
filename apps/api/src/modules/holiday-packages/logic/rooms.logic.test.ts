@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Room } from '../catalog/catalog.schemas';
+import type { Room } from '../../catalog/catalog.schemas';
 import { roomsNeeded } from './rooms.logic';
 
 const room = (maxAdults: number, maxChildren: number): Room => ({

@@ -2,8 +2,8 @@ import { RESERVATION_NUMBER } from '@bh/shared/reservation';
 import { randomInt } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { getCatalog } from '../catalog/catalog.loader';
-import { MENON_EXAMPLE_TRIP } from '../holiday-packages/menon-example';
-import { validateTrip } from '../holiday-packages/validator.logic';
+import { MENON_EXAMPLE_TRIP } from '../holiday-packages/logic/menon-example';
+import { validateTrip } from '../holiday-packages/logic/validator.logic';
 import { bookTrip, newReference } from './reservation.logic';
 
 const menon = { ...MENON_EXAMPLE_TRIP, trip_id: 'package-1' };
