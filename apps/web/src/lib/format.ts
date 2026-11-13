@@ -20,6 +20,11 @@ export function toMinorUnits(amount: number, currency: string): number {
   return Math.round(amount * 10 ** fractionDigits(currency));
 }
 
+/** Groups whole rupees the Indian way, without the ₹ sign, for an input: 122344 becomes "1,22,344". */
+export function groupRupees(rupees: number): string {
+  return new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 0 }).format(rupees);
+}
+
 /** Formats whole rupees, the unit of the trip format (it has no paise): 219324 becomes "₹2,19,324". */
 export function formatInr(rupees: number): string {
   return new Intl.NumberFormat(LOCALE, {
