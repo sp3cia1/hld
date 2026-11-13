@@ -4,12 +4,16 @@ import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ChangePanel, type ChangeTarget } from '@/features/package-changes/components/change-panel';
-import { useChangePending } from '@/features/package-changes/hooks';
+import { useApplyChange, useChangePending } from '@/features/package-changes/hooks';
+import { getErrorMessage } from '@/lib/error-messages';
 import { formatInr, formatLocalDate } from '@/lib/format';
 import { FreeTimeList } from './free-time-list';
 
 type DayByDayProps = {
   packageId: string;
+  /** The holiday's first day and last day: visits go on the days from the first up to the day before the last. */
+  startDate: string;
+  endDate: string;
   items: TripItem[];
   freeTime: FreeTime[];
   /** Called after a change to the package is saved. */
@@ -19,9 +23,16 @@ type DayByDayProps = {
 /**
  * The package day by day (M4): each day that has something on it, items in the package's own time order. A day the
  * package leaves free also lists what still fits once the traveler reaches the hotel. Each hotel and flight can be
- * changed (M6); one change panel is open at a time.
+ * changed, and visits added or removed (M6); one change panel is open at a time.
  */
-export function DayByDay({ packageId, items, freeTime, onChanged }: DayByDayProps) {
+export function DayByDay({
+  packageId,
+  startDate,
+  endDate,
+  items,
+  freeTime,
+  onChanged,
+}: DayByDayProps) {
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const pending = useChangePending(packageId);
   const arrivalFlightId = items.find((item) => item.type === 'flight')?.item_id;
@@ -42,12 +53,25 @@ export function DayByDay({ packageId, items, freeTime, onChanged }: DayByDayProp
       </div>
       {groupByDay(items).map(({ day, dayItems }) => {
         const free = freeTime.find((f) => f.date === day);
+        const addKey = `visit:${day}`;
+        const adding = openItemId === addKey;
         return (
           <Card key={day}>
             <CardContent className="space-y-4">
               <h3 className="text-lg font-bold">{formatLocalDate(day)}</h3>
               <ul className="divide-y">
                 {dayItems.map((item) => {
+                  if (item.type === 'attraction') {
+                    return (
+                      <VisitRow
+                        key={item.item_id}
+                        packageId={packageId}
+                        item={item}
+                        disabled={pending}
+                        onRemoved={onChanged}
+                      />
+                    );
+                  }
                   const target = targetOf(item);
                   const open = openItemId === item.item_id;
                   return (
@@ -80,12 +104,80 @@ export function DayByDay({ packageId, items, freeTime, onChanged }: DayByDayProp
                   );
                 })}
               </ul>
-              {free && <FreeTimeList freeTime={free} />}
+              {free && <FreeTimeList packageId={packageId} freeTime={free} onAdded={onChanged} />}
+              {day >= startDate && day < endDate && (
+                <div className="space-y-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-expanded={adding}
+                    disabled={pending}
+                    onClick={() => setOpenItemId(adding ? null : addKey)}
+                  >
+                    Add a visit
+                  </Button>
+                  {adding && (
+                    <ChangePanel
+                      packageId={packageId}
+                      target={{ kind: 'visit', date: day }}
+                      onApplied={onChanged}
+                      onClose={() => setOpenItemId(null)}
+                    />
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         );
       })}
     </section>
+  );
+}
+
+/** A visit, with "Remove". A refusal (the last visit of a full day) shows its reason under the visit. */
+function VisitRow({
+  packageId,
+  item,
+  disabled,
+  onRemoved,
+}: {
+  packageId: string;
+  item: TripItem;
+  disabled: boolean;
+  onRemoved: () => void;
+}) {
+  const remove = useApplyChange(packageId);
+  const refused = remove.data?.data.result === 'REFUSED' ? remove.data.data.problems : null;
+  return (
+    <ItemRow
+      item={item}
+      action={
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          onClick={() =>
+            remove.mutate(
+              { type: 'remove_attraction', itemId: item.item_id },
+              { onSuccess: ({ data }) => data.result === 'APPLIED' && onRemoved() },
+            )
+          }
+        >
+          Remove
+        </Button>
+      }
+    >
+      {refused?.map((problem) => (
+        <p key={problem.message} role="alert" className="text-sm font-semibold text-destructive">
+          {problem.message}
+        </p>
+      ))}
+      {remove.isError && (
+        <p role="alert" className="text-sm font-semibold text-destructive">
+          {getErrorMessage(remove.error)}
+        </p>
+      )}
+    </ItemRow>
   );
 }
 

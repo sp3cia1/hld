@@ -1,4 +1,5 @@
 import type {
+  AttractionChoice,
   ChangeRequest,
   FlightChoice,
   FlightDirection,
@@ -12,12 +13,14 @@ import { Loading } from '@/components/states/loading';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getErrorMessage } from '@/lib/error-messages';
-import { formatInr, formatInrDifference, formatLocalDate } from '@/lib/format';
-import { useApplyChange, useFlightChoices, useHotelChoices } from '../hooks';
+import { formatDuration, formatInr, formatInrDifference, formatLocalDate } from '@/lib/format';
+import { useApplyChange, useAttractionChoices, useFlightChoices, useHotelChoices } from '../hooks';
 
-/** What the traveler is changing: the hotel of one city, or one of the two flights. */
+/** What the traveler is changing: the hotel of one city, one of the two flights, or the visits of one day. */
 export type ChangeTarget =
-  { kind: 'hotel'; city: string } | { kind: 'flight'; direction: FlightDirection };
+  | { kind: 'hotel'; city: string }
+  | { kind: 'flight'; direction: FlightDirection }
+  | { kind: 'visit'; date: string };
 
 /**
  * Choosing means comparing the best few, and the list comes ranked (the current choice, then the smallest
@@ -35,11 +38,14 @@ type PanelProps = {
 
 /** The choices for one part of the package, each with what it does to the total. Picking one applies it. */
 export function ChangePanel({ target, ...props }: PanelProps) {
-  return target.kind === 'hotel' ? (
-    <HotelChoices city={target.city} {...props} />
-  ) : (
-    <FlightChoices direction={target.direction} {...props} />
-  );
+  switch (target.kind) {
+    case 'hotel':
+      return <HotelChoices city={target.city} {...props} />;
+    case 'flight':
+      return <FlightChoices direction={target.direction} {...props} />;
+    case 'visit':
+      return <VisitChoices date={target.date} {...props} />;
+  }
 }
 
 type Shared = Omit<PanelProps, 'target'>;
@@ -80,16 +86,36 @@ function FlightChoices({ direction, ...props }: Shared & { direction: FlightDire
   );
 }
 
+function VisitChoices({ date, ...props }: Shared & { date: string }) {
+  const query = useAttractionChoices(props.packageId, date);
+  return (
+    <Choices
+      {...props}
+      title={`Add a visit on ${formatLocalDate(date)}`}
+      query={query}
+      hiddenNote={(n) =>
+        `${count(n, 'attraction')} in other cities not listed: they need another plan of cities.`
+      }
+      toRow={(choice: AttractionChoice) => ({
+        key: choice.attractionId,
+        name: choice.name,
+        details: visitDetails(choice),
+        change: { type: 'add_attraction', date, attractionId: choice.attractionId },
+      })}
+    />
+  );
+}
+
 type Row = { key: string; name: string; details: string; change: ChangeRequest };
 
-type ChoicesProps<C extends HotelChoice | FlightChoice> = Shared & {
+type ChoicesProps<C extends HotelChoice | FlightChoice | AttractionChoice> = Shared & {
   title: string;
   query: UseQueryResult<{ data: { choices: C[]; hidden: number } }>;
   toRow: (choice: C) => Row;
   hiddenNote: (hidden: number) => string;
 };
 
-function Choices<C extends HotelChoice | FlightChoice>({
+function Choices<C extends HotelChoice | FlightChoice | AttractionChoice>({
   packageId,
   title,
   query,
@@ -210,7 +236,7 @@ function ChoiceRow({
   onPick,
 }: {
   row: Row;
-  choice: HotelChoice | FlightChoice;
+  choice: HotelChoice | FlightChoice | AttractionChoice;
   disabled: boolean;
   onPick: () => void;
 }) {
@@ -263,6 +289,16 @@ function flightDetails(choice: FlightChoice): string {
   const nextDay = choice.arrives.slice(0, 10) > choice.departs.slice(0, 10) ? ' next day' : '';
   const stops = choice.stops === 0 ? 'direct' : count(choice.stops, 'stop');
   return `${formatLocalDate(choice.departs)}, ${choice.departs.slice(11)} – ${choice.arrives.slice(11)}${nextDay} · ${stops}`;
+}
+
+/** "Theme park · 2 h · at 10:00", or the opening hours when it can't be added. */
+function visitDetails(choice: AttractionChoice): string {
+  const kind =
+    choice.category.charAt(0) + choice.category.slice(1).toLowerCase().replaceAll('_', ' ');
+  const when = choice.start
+    ? `at ${choice.start.slice(11)}`
+    : `open ${choice.opensAt}–${choice.closesAt}`;
+  return `${kind} · ${formatDuration(choice.visitMinutes)} · ${when}`;
 }
 
 function count(n: number, word: string): string {

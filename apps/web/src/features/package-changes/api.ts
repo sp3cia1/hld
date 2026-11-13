@@ -1,4 +1,5 @@
 import {
+  attractionChoicesResponseSchema,
   changeResponseSchema,
   flightChoicesResponseSchema,
   hotelChoicesResponseSchema,
@@ -20,6 +21,12 @@ export function fetchHotelChoices(packageId: string, city: string) {
 export function fetchFlightChoices(packageId: string, direction: FlightDirection) {
   return apiRequest(`${packagePath(packageId)}/choices/flight${toQueryString({ direction })}`, {
     schema: flightChoicesResponseSchema,
+  });
+}
+
+export function fetchAttractionChoices(packageId: string, date: string) {
+  return apiRequest(`${packagePath(packageId)}/choices/attraction${toQueryString({ date })}`, {
+    schema: attractionChoicesResponseSchema,
   });
 }
 

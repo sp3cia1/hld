@@ -2,7 +2,7 @@ import type { PackageResponse } from '@bh/shared/holiday-package';
 import type { ChangeRequest, FlightDirection } from '@bh/shared/package-change';
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { packageKey } from '@/features/holiday-packages/hooks';
-import { applyChange, fetchFlightChoices, fetchHotelChoices } from './api';
+import { applyChange, fetchAttractionChoices, fetchFlightChoices, fetchHotelChoices } from './api';
 
 /** The choices sit under the package's key: they describe that package as it is now. */
 function choicesKey(packageId: string) {
@@ -25,6 +25,13 @@ export function useFlightChoices(packageId: string, direction: FlightDirection) 
   return useQuery({
     queryKey: [...choicesKey(packageId), 'flight', direction],
     queryFn: () => fetchFlightChoices(packageId, direction),
+  });
+}
+
+export function useAttractionChoices(packageId: string, date: string) {
+  return useQuery({
+    queryKey: [...choicesKey(packageId), 'attraction', date],
+    queryFn: () => fetchAttractionChoices(packageId, date),
   });
 }
 

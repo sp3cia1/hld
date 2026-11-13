@@ -61,6 +61,8 @@ export function PackagePage() {
       <BudgetSummary budget={budget} />
       <DayByDay
         packageId={saved.data.data.packageId}
+        startDate={trip.start_date}
+        endDate={trip.end_date}
         items={trip.items}
         freeTime={freeTime}
         onChanged={() => void navigate('.', { replace: true, state: null })}
