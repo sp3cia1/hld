@@ -148,6 +148,8 @@ export const attractionSchema = z.object({
   attraction_id: z.string(),
   name: z.string(),
   name_ja: z.string().nullable(),
+  /** Other common names, read by the quick request (S1). Typos are not in this list. */
+  aliases: z.array(z.string()).optional(),
   city: z.string(),
   category: z.string(),
   open_days: z.array(weekday).min(1),
