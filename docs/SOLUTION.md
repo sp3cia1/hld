@@ -157,6 +157,21 @@ None found. The profile on 13 Nov showed 0 unreadable records, 0 duplicate IDs a
   `{ rule, itemId, message }`, and `checkTrip` adds a pass/fail line per rule for the rules panel. The 12 rules and
   their titles are in `packages/shared/src/trip-check.ts`. Written from the statement, not the builder, and imports
   none of the builder's helpers, so it is a real second check. It already covers city changes (one link transfer on its timetable; a visit that day needs the station taxi), ready for the builder's several cities.
+- **Three packages (G4, `builder.logic.ts`):** a build offers the cheapest, the fastest and the best rated, each
+  within budget and each saved as its own package, so the traveler can open, change and confirm any of them.
+  - **Fastest** (both flights plus every move between cities): each city plan is searched once per flight pair and per
+    mix of moves (bus or taxi where a link has both), with the rest at the lowest price.
+  - **Best rated** (hotel stars averaged over the nights): each plan once per mix of star levels across its cities,
+    each city's stay the cheapest at its level, the rest at the lowest price. Both are exact, not a re-sort of the
+    cheapest packages: re-sorting gave the wrong best rated in 698 of 712 test requests.
+  - A package that earns two labels is offered once with both. Over budget, only the cheapest (M8).
+  - The package page shows the options as cards with Cheapest, Fastest and Best rated badges and each one's total,
+    cities, travel time and average stars, read live so they stay right after a change. The list lives in the browser's
+    history entry: it survives a refresh, not a link opened fresh (a group id in the database would fix that).
+  - Proof (13 Nov): 907 requests, 3 kinds of party, 2,189 packages offered: every one passes the validator and is within
+    budget, and the fastest and best rated always beat the others on their measure. 0.3 s for the slowest request.
+    In this data the bus-or-taxi choice never decides the fastest (one city is always faster in the UAE), so no test
+    shows it.
 
 ## Cut
 
