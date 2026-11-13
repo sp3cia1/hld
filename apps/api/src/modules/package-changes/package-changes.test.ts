@@ -1,5 +1,6 @@
 import { tripSchema } from '@bh/shared/holiday-package';
 import {
+  attractionChoicesResponseSchema,
   changeResponseSchema,
   flightChoicesResponseSchema,
   hotelChoicesResponseSchema,
@@ -201,3 +202,71 @@ async function build(body: typeof menon): Promise<string> {
   expect(res.status).toBe(201);
   return res.body.data.packageId;
 }
+
+describe('visits', () => {
+  const teamLab = { type: 'add_attraction', date: '2027-04-11', attractionId: 'ATT-TYO-001' };
+
+  it('lists the attractions for a day, and refuses a day the trip has no visits on', async () => {
+    const id = await build(menon);
+
+    const day = await request(app)
+      .get(`/api/packages/${id}/choices/attraction`)
+      .query({ date: '2027-04-11' });
+    const last = await request(app)
+      .get(`/api/packages/${id}/choices/attraction`)
+      .query({ date: '2027-04-16' });
+
+    expect(day.status).toBe(200);
+    expect(attractionChoicesResponseSchema.parse(day.body).data.choices.length).toBeGreaterThan(0);
+    expect(last.status).toBe(400);
+    expect(last.body.error.details.fields).toEqual([
+      { path: 'date', message: 'No visits on the last day' },
+    ]);
+  });
+
+  it('adds a visit and saves it', async () => {
+    const id = await build(menon);
+
+    const res = await request(app).post(`/api/packages/${id}/changes`).send(teamLab);
+
+    expect(res.body.data.result).toBe('APPLIED');
+    const { trip } = (await request(app).get(`/api/packages/${id}`)).body.data;
+    expect(trip.items).toContainEqual(
+      expect.objectContaining({ catalog_id: 'ATT-TYO-001', start: '2027-04-11T10:00' }),
+    );
+    expect(trip.total_inr).toBe(219324 + 5096);
+  });
+
+  it('refuses to remove the only visit of a full day, and keeps the package as it was', async () => {
+    const id = await build(menon);
+    const before = await request(app).get(`/api/packages/${id}`);
+
+    const res = await request(app)
+      .post(`/api/packages/${id}/changes`)
+      .send({ type: 'remove_attraction', itemId: 'i4' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({
+      result: 'REFUSED',
+      problems: [{ rule: 'attraction-days', itemId: 'i4' }],
+    });
+    expect((await request(app).get(`/api/packages/${id}`)).body).toEqual(before.body);
+  });
+
+  it.each([
+    ['a visit on the last day', { ...teamLab, date: '2027-04-16' }, 'date'],
+    [
+      'an attraction that is not in the catalog',
+      { ...teamLab, attractionId: 'ATT-0' },
+      'attractionId',
+    ],
+    ['removing an item that is not a visit', { type: 'remove_attraction', itemId: 'i1' }, 'itemId'],
+  ])('answers 400 for %s', async (_, body, field) => {
+    const id = await build(menon);
+
+    const res = await request(app).post(`/api/packages/${id}/changes`).send(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.details.fields.map((f: { path: string }) => f.path)).toEqual([field]);
+  });
+});

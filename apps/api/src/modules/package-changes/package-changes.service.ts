@@ -1,5 +1,6 @@
 import type { FieldError } from '@bh/shared/common';
 import type {
+  AttractionChoices,
   ChangeRequest,
   ChangeResult,
   FlightChoices,
@@ -9,8 +10,8 @@ import type {
 import { AppError } from '../../lib/app-error';
 import { getCatalog } from '../catalog/catalog.loader';
 import { toSavedPackage } from '../holiday-packages/holiday-packages.service';
-import { checkChange, checkCity, tryChange } from './change.logic';
-import { flightChoices, hotelChoices } from './choices.logic';
+import { checkChange, checkCity, checkVisitDate, tryChange } from './change.logic';
+import { attractionChoices, flightChoices, hotelChoices } from './choices.logic';
 import { findTripWithVersion, saveTripIfUnchanged } from './package-changes.repository';
 
 /** The hotel choices in a city of the package's plan, each with what picking it would do. */
@@ -27,6 +28,16 @@ export async function getFlightChoices(
 ): Promise<FlightChoices> {
   const { trip } = await loadPackage(packageId);
   return flightChoices(trip, direction, getCatalog());
+}
+
+/** The attractions the traveler can add on a day of the trip, each with when it would start and what it costs. */
+export async function getAttractionChoices(
+  packageId: string,
+  date: string,
+): Promise<AttractionChoices> {
+  const { trip } = await loadPackage(packageId);
+  throwIfInvalid(checkVisitDate(trip, date));
+  return attractionChoices(trip, date, getCatalog());
 }
 
 /**

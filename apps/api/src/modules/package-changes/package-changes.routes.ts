@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  attractionChoicesHandler,
   changeHandler,
   flightChoicesHandler,
   hotelChoicesHandler,
@@ -11,4 +12,5 @@ export const packageChangesRouter = Router();
 
 packageChangesRouter.get('/:id/choices/hotel', hotelChoicesHandler);
 packageChangesRouter.get('/:id/choices/flight', flightChoicesHandler);
+packageChangesRouter.get('/:id/choices/attraction', attractionChoicesHandler);
 packageChangesRouter.post('/:id/changes', changeHandler);
