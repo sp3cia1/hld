@@ -1,4 +1,8 @@
-import { buildResponseSchema, packageResponseSchema } from '@bh/shared/holiday-package';
+import {
+  buildResponseSchema,
+  cityPlanChoicesResponseSchema,
+  packageResponseSchema,
+} from '@bh/shared/holiday-package';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { resetDatabase } from '../../../test/helpers';
@@ -123,5 +127,59 @@ describe('GET /api/packages/:id', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('changing the cities (G3)', () => {
+  const tokyoOsaka = [
+    { city: 'Tokyo', nights: 2 },
+    { city: 'Osaka', nights: 4 },
+  ];
+
+  it('lists the valid plans, marking the current one', async () => {
+    const built = await request(app).post('/api/packages').send(menon);
+
+    const res = await request(app).get(`/api/packages/${built.body.data.packageId}/city-plans`);
+
+    expect(res.status).toBe(200);
+    const { choices } = cityPlanChoicesResponseSchema.parse(res.body).data;
+    expect(choices).toHaveLength(27);
+    expect(choices.filter((choice) => choice.current).map((choice) => choice.plan)).toEqual([
+      [{ city: 'Tokyo', nights: 6 }],
+    ]);
+  });
+
+  it('builds new packages for the chosen plan and leaves the old one as it was', async () => {
+    const built = await request(app).post('/api/packages').send(menon);
+    const id = built.body.data.packageId as string;
+
+    const res = await request(app)
+      .post(`/api/packages/${id}/rebuild`)
+      .send({ cityPlan: tokyoOsaka });
+
+    expect(res.status).toBe(201);
+    const { data } = buildResponseSchema.parse(res.body);
+    if (data.status === 'NO_PACKAGE') throw new Error('expected a package');
+    expect(data.trip.total_inr).toBe(230440);
+    expect(data.packageId).not.toBe(id);
+    expect((await request(app).get(`/api/packages/${id}`)).body.data.trip).toEqual(
+      built.body.data.trip,
+    );
+  });
+
+  it("refuses a plan the rules don't allow", async () => {
+    const built = await request(app).post('/api/packages').send(menon);
+
+    const res = await request(app)
+      .post(`/api/packages/${built.body.data.packageId}/rebuild`)
+      .send({
+        cityPlan: [
+          { city: 'Tokyo', nights: 1 },
+          { city: 'Osaka', nights: 5 },
+        ],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 });
