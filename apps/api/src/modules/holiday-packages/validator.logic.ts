@@ -14,8 +14,6 @@ import { MIN_MINUTES_AFTER_LANDING, MIN_MINUTES_BEFORE_DEPARTURE } from './trave
 //
 // It is written from the statement and DATA_DICTIONARY.md, not from the builder, and imports none of the builder's
 // helpers (prices, rooms, times). So it is a second, independent check: a mistake in one is caught by the other.
-// It runs on every built package, after every change, and before every export (docs/SOLUTION.md).
-
 /** A package to check. No rule depends on the id, so a package that is not saved yet can be checked too. */
 export type TripToCheck = Omit<Trip, 'trip_id'>;
 
