@@ -92,7 +92,10 @@ describe('GET /api/packages/:id', () => {
     const res = await request(app).get(`/api/packages/${built.body.data.packageId}`);
 
     expect(res.status).toBe(200);
-    expect(packageResponseSchema.parse(res.body).data).toEqual(built.body.data);
+    // The build answer also lists every package offered for the request (G4); a saved package doesn't know the others.
+    const { options, ...asBuilt } = built.body.data;
+    expect(options).toHaveLength(2);
+    expect(packageResponseSchema.parse(res.body).data).toEqual(asBuilt);
   });
 
   it('still returns it from a new app, as after a backend restart', async () => {
