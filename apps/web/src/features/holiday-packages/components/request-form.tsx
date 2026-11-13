@@ -34,10 +34,7 @@ export function RequestForm({ options }: { options: Options }) {
   function onSubmit(values: RequestFormValues) {
     create.mutate(toHolidayRequest(values), {
       onSuccess: ({ data }) => {
-        if (data.status !== 'NO_PACKAGE') {
-          // The result travels in the history entry, so it survives a refresh of the package page.
-          void navigate(`/packages/${data.packageId}`, { state: data });
-        }
+        if (data.status !== 'NO_PACKAGE') void navigate(`/packages/${data.packageId}`);
       },
       onError: (error) => {
         // The API checks values against the data (nights, dates). Its messages go on their fields.
