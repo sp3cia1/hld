@@ -149,10 +149,33 @@ export const noPackageReasonSchema = z.object({
 });
 export type NoPackageReason = z.infer<typeof noPackageReasonSchema>;
 
+/** The labels of the packages offered for one request (G4). */
+export const packageLabelSchema = z.enum(['CHEAPEST', 'FASTEST', 'BEST_RATED']);
+export type PackageLabel = z.infer<typeof packageLabelSchema>;
+
+/**
+ * What the labels compare (G4): the travel time (both flights plus every move between cities) and the hotel stars
+ * averaged over the nights.
+ */
+export const packageSummarySchema = z.object({
+  travelMinutes: z.number().int().nonnegative(),
+  averageStars: z.number().nonnegative(),
+});
+export type PackageSummary = z.infer<typeof packageSummarySchema>;
+
+/** One package offered after a build, saved under its own id, with the labels it earned. */
+export const packageOptionSchema = z.object({
+  packageId: z.string(),
+  labels: z.array(packageLabelSchema).min(1),
+});
+export type PackageOption = z.infer<typeof packageOptionSchema>;
+
 /**
  * What POST /api/packages returns inside `{ data }`.
  * - OK (201): a package within budget, saved.
  * - OVER_BUDGET (201): no package fits the budget, so this is the cheapest one, saved and labelled (M8).
+ * `options` lists every package offered, each saved: the cheapest (whose fields these are), the fastest and the best
+ * rated (G4), with a package that earns two labels listed once. Over budget, only the cheapest.
  * Both list the free time on the days the package leaves open (`freeTime`).
  * - NO_PACKAGE (200): no package is possible for this request. Nothing is saved.
  * A value that is not valid is a 400 VALIDATION_ERROR instead (see `apiErrorSchema` in common.ts).
@@ -164,6 +187,8 @@ export const buildResultSchema = z.discriminatedUnion('status', [
     trip: tripSchema,
     budget: budgetSummarySchema,
     freeTime: z.array(freeTimeSchema),
+    summary: packageSummarySchema,
+    options: z.array(packageOptionSchema).min(1),
   }),
   z.object({
     status: z.literal('OVER_BUDGET'),
@@ -171,6 +196,8 @@ export const buildResultSchema = z.discriminatedUnion('status', [
     trip: tripSchema,
     budget: budgetSummarySchema,
     freeTime: z.array(freeTimeSchema),
+    summary: packageSummarySchema,
+    options: z.array(packageOptionSchema).min(1),
   }),
   z.object({
     status: z.literal('NO_PACKAGE'),
@@ -194,6 +221,7 @@ export const savedPackageSchema = z.object({
   budget: budgetSummarySchema,
   reference: z.string().nullable(),
   freeTime: z.array(freeTimeSchema),
+  summary: packageSummarySchema,
 });
 export type SavedPackage = z.infer<typeof savedPackageSchema>;
 

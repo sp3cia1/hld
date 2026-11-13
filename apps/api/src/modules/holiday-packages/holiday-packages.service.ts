@@ -9,6 +9,7 @@ import { budgetOf } from './logic/budget.logic';
 import { buildPackage } from './logic/builder.logic';
 import { freeTimeIn } from './logic/free-time.logic';
 import { checkRequest } from './logic/request.logic';
+import { summaryOf } from './logic/summary.logic';
 import { checkTrip, validateTrip } from './logic/validator.logic';
 
 /**
@@ -26,14 +27,25 @@ export async function createPackage(request: HolidayRequest): Promise<BuildResul
   const outcome = buildPackage(request, catalog);
   if (outcome.status === 'NO_PACKAGE') return outcome;
 
-  const trip = await runInTransaction(async (tx) => {
-    const id = await insertPackage(tx, request, outcome.trip);
-    const saved: Trip = { ...outcome.trip, trip_id: id };
-    await saveTrip(tx, id, saved);
+  // Every package offered is saved on its own, so the traveler can open, change and confirm any of them.
+  const trips = await runInTransaction(async (tx) => {
+    const saved: Trip[] = [];
+    for (const option of outcome.options) {
+      const id = await insertPackage(tx, request, option.trip);
+      const trip: Trip = { ...option.trip, trip_id: id };
+      await saveTrip(tx, id, trip);
+      saved.push(trip);
+    }
     return saved;
   });
 
-  return toSavedPackage(trip, null);
+  return {
+    ...toSavedPackage(trips[0]!, null),
+    options: outcome.options.map((option, i) => ({
+      packageId: trips[i]!.trip_id,
+      labels: option.labels,
+    })),
+  };
 }
 
 /** A saved package by its id. A refresh, a shared link and a backend restart all read it from here. */
@@ -85,5 +97,6 @@ export function toSavedPackage(trip: Trip, reference: string | null): SavedPacka
     budget: budgetOf(trip),
     reference,
     freeTime: freeTimeIn(trip, getCatalog()),
+    summary: summaryOf(trip, getCatalog()),
   };
 }
