@@ -1,3 +1,5 @@
+import { fieldErrorSchema, type FieldError } from '@bh/shared/common';
+import { z } from 'zod';
 import { ApiError } from './api-client';
 
 // API error code -> what the customer reads. Add one line per code the API can return.
@@ -13,6 +15,15 @@ const messages: Record<string, string> = {
 };
 
 const FALLBACK = 'Something went wrong. Please try again.';
+
+const validationDetailsSchema = z.object({ fields: z.array(fieldErrorSchema) });
+
+/** The per-field messages of a VALIDATION_ERROR, written for the customer by the API. Empty for any other error. */
+export function getFieldErrors(error: unknown): FieldError[] {
+  if (!(error instanceof ApiError) || error.code !== 'VALIDATION_ERROR') return [];
+  const parsed = validationDetailsSchema.safeParse(error.details);
+  return parsed.success ? parsed.data.fields : [];
+}
 
 export function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return messages[error.code] ?? FALLBACK;
