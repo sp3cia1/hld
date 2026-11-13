@@ -15,6 +15,8 @@ const messages: Record<string, string> = {
     'This holiday was changed in another tab. Reload the page to see the latest version, then try again.',
   PACKAGE_INVALID:
     'This holiday no longer meets every travel rule, so it can’t be booked. Please build it again.',
+  SOLD_OUT:
+    'Someone has just booked the last seats or rooms this holiday needs. Plan it again: the new package only uses what’s still free.',
   SERVICE_UNAVAILABLE: 'The service is temporarily unavailable. Please try again in a moment.',
   INTERNAL: 'Something went wrong on our side. Please try again.',
 };

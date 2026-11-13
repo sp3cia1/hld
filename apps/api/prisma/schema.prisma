@@ -2,7 +2,8 @@
 // We use `db push`, not migrations, on purpose. See ../decisions/0009-db-push-over-migrations.md (outside the repo).
 //
 // The catalog (flights, hotels, transfers, attractions) is read from data/ into memory, never stored here.
-// The database keeps only what must survive a restart: packages and confirmed reservations (docs/SOLUTION.md).
+// The database keeps only what must survive a restart: packages, confirmed reservations, and the seats and rooms
+// those reservations have used up (S2, docs/SOLUTION.md).
 // First proposal, to settle in the schema session.
 
 generator client {
@@ -38,4 +39,21 @@ model Reservation {
   // The package at confirm time: every item BOOKED, booking.reference set.
   trip      Json
   createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
+
+// S2: seats left on a flight once confirmed reservations have taken theirs. The catalog's seats_left never changes
+// (the data files stay as they are), so a row appears the first time a booking needs the flight, starting from it.
+model FlightStock {
+  flightId  String @id
+  seatsLeft Int
+}
+
+// S2: rooms of one type left on one night once confirmed reservations have taken theirs, starting from the catalog's
+// rooms_left. `night` is the local date the traveler sleeps there, YYYY-MM-DD, kept as text like the catalog's dates.
+model RoomStock {
+  roomId    String
+  night     String
+  roomsLeft Int
+
+  @@id([roomId, night])
 }

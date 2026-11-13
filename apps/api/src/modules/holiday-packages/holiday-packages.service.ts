@@ -4,6 +4,7 @@ import { AppError } from '../../lib/app-error';
 import { runInTransaction } from '../../lib/transaction';
 import { getCatalog } from '../catalog/catalog.loader';
 import { findReservationByPackage } from '../reservations/reservations.repository';
+import { getBookedCatalog } from '../stock/stock.service';
 import { findPackage, insertPackage, saveTrip } from './holiday-packages.repository';
 import { budgetOf } from './logic/budget.logic';
 import { buildPackage } from './logic/builder.logic';
@@ -16,6 +17,10 @@ import { checkTrip, validateTrip } from './logic/validator.logic';
  * Checks the request against the data, builds the package, and saves it unless none is possible. A package comes
  * back with the free time on the days it leaves open.
  */
+/**
+ * Checks the request against the data, builds the package, and saves it unless none is possible. A package comes
+ * back with the free time on the days it leaves open.
+ */
 export async function createPackage(request: HolidayRequest): Promise<BuildResult> {
   const catalog = getCatalog();
 
@@ -24,7 +29,8 @@ export async function createPackage(request: HolidayRequest): Promise<BuildResul
     throw new AppError('VALIDATION_ERROR', 400, 'Some fields are invalid', { fields });
   }
 
-  const outcome = buildPackage(request, catalog);
+  // S2: seats and rooms that confirmed reservations took are gone, so every package offered only uses what is free.
+  const outcome = buildPackage(request, await getBookedCatalog());
   if (outcome.status === 'NO_PACKAGE') return outcome;
 
   // Every package offered is saved on its own, so the traveler can open, change and confirm any of them.
@@ -62,7 +68,9 @@ export async function getPackage(id: string): Promise<SavedPackage> {
 export async function getPackageCheck(id: string): Promise<TripCheck> {
   const saved = await findPackage(id);
   if (!saved) throw new AppError('NOT_FOUND', 404, 'No package has this id');
-  return checkTrip(saved.trip, getCatalog());
+  // S2: before confirm, checked against what is still free, so a flight someone else filled shows as a broken rule.
+  // A confirmed package's own seats and rooms are in the booked stock, so it is checked against the catalog as is.
+  return checkTrip(saved.trip, saved.reference ? getCatalog() : await getBookedCatalog());
 }
 
 /**

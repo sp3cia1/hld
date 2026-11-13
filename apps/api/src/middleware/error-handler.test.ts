@@ -11,7 +11,7 @@ const app = express();
 app.use(requestLogger);
 app.use(express.json());
 app.get('/app-error', () => {
-  throw new AppError('SOLD_OUT', 409, 'No tickets left', { available: 0 });
+  throw new AppError('SOLD_OUT', 409, 'No seats left', { available: 0 });
 });
 app.get('/zod-error', () => {
   z.object({ quantity: z.number() }).parse({ quantity: 'two' });
@@ -32,7 +32,7 @@ describe('errorHandler', () => {
     expect(res.body).toEqual({
       error: {
         code: 'SOLD_OUT',
-        message: 'No tickets left',
+        message: 'No seats left',
         details: { available: 0 },
         requestId: 'abc-123',
       },

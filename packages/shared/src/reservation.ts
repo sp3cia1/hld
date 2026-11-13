@@ -23,3 +23,8 @@ export type Reservation = z.infer<typeof reservationSchema>;
 
 export const reservationResponseSchema = dataResponseSchema(reservationSchema);
 export type ReservationResponse = z.infer<typeof reservationResponseSchema>;
+
+/** The details of a 409 SOLD_OUT from confirm: each seat or room someone else booked first, in the traveler's words. */
+export const soldOutDetailsSchema = z.object({
+  shortages: z.array(z.object({ message: z.string() })),
+});
