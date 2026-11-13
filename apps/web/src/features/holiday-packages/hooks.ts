@@ -7,6 +7,7 @@ import {
   fetchPackage,
   fetchPackageCheck,
   fetchPackageExport,
+  readQuickRequest,
 } from './api';
 
 export function useOptions() {
@@ -59,4 +60,9 @@ export function useCreatePackage() {
       }
     },
   });
+}
+
+/** Reads a holiday described in plain words (S1). It only fills the form: nothing is built or saved. */
+export function useQuickRequest() {
+  return useMutation({ mutationFn: readQuickRequest });
 }
