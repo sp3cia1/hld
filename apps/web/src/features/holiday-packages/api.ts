@@ -4,6 +4,7 @@ import {
   type HolidayRequest,
 } from '@bh/shared/holiday-package';
 import { optionsResponseSchema } from '@bh/shared/options';
+import { tripCheckResponseSchema } from '@bh/shared/trip-check';
 import { apiRequest } from '@/lib/api-client';
 
 export function fetchOptions() {
@@ -16,4 +17,10 @@ export function createPackage(request: HolidayRequest) {
 
 export function fetchPackage(id: string) {
   return apiRequest(`/packages/${encodeURIComponent(id)}`, { schema: packageResponseSchema });
+}
+
+export function fetchPackageCheck(id: string) {
+  return apiRequest(`/packages/${encodeURIComponent(id)}/check`, {
+    schema: tripCheckResponseSchema,
+  });
 }

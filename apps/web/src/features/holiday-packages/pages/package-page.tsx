@@ -8,10 +8,14 @@ import { ApiError } from '@/lib/api-client';
 import { formatInr } from '@/lib/format';
 import { BudgetSummary } from '../components/budget-summary';
 import { DayByDay } from '../components/day-by-day';
+import { RulesPanel } from '../components/rules-panel';
 import { TripHeading } from '../components/trip-heading';
 import { usePackage } from '../hooks';
 
-/** The saved package: total against budget, confirm, then the day-by-day plan. Survives a refresh and a shared link. */
+/**
+ * The saved package: total against budget, the rules it passes, confirm, then the day-by-day plan. Survives a
+ * refresh and a shared link.
+ */
 export function PackagePage() {
   const { id = '' } = useParams();
   const saved = usePackage(id);
@@ -34,7 +38,7 @@ export function PackagePage() {
     return <ErrorState error={saved.error} onRetry={() => void saved.refetch()} />;
   }
 
-  const { trip, budget, status, freeTime } = saved.data.data;
+  const { trip, budget, status, freeTime, packageId } = saved.data.data;
   return (
     <div className="space-y-8">
       <TripHeading title={`Your holiday in ${trip.country}`} trip={trip} />
@@ -44,7 +48,8 @@ export function PackagePage() {
           can build. A budget of {formatInr(budget.totalInr)} would cover it.
         </p>
       )}
-      <BudgetSummary budget={budget} />      <BudgetSummary budget={budget} />
+      <BudgetSummary budget={budget} />
+      <RulesPanel packageId={packageId} />
       <ConfirmPanel saved={saved.data.data} />
       <DayByDay items={trip.items} freeTime={freeTime} />
     </div>

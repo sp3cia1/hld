@@ -60,9 +60,10 @@ describe('validateTrip', () => {
               if (problems.length > 0) failures.push({ request, problems });
             }
 
-    expect(built).toBeGreaterThan(1000);
+            expect(built).toBeGreaterThan(1000);
     expect(failures).toEqual([]);
-  });
+    // Builds and validates every request the data allows, so it needs more than the default 5 seconds.
+  }, 30_000);
 
   it.each<[string, TripToCheck, string]>([
     ['a total that is off by ₹1', { ...menon, total_inr: menon.total_inr + 1 }, 'prices'],

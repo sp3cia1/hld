@@ -1,4 +1,5 @@
 import type { BuildResult, HolidayRequest, SavedPackage, Trip } from '@bh/shared/holiday-package';
+import type { TripCheck } from '@bh/shared/trip-check';
 import { AppError } from '../../lib/app-error';
 import { runInTransaction } from '../../lib/transaction';
 import { getCatalog } from '../catalog/catalog.loader';
@@ -7,6 +8,7 @@ import { budgetOf } from './logic/budget.logic';
 import { buildPackage } from './logic/builder.logic';
 import { freeTimeIn } from './logic/free-time.logic';
 import { checkRequest } from './logic/request.logic';
+import { checkTrip } from './logic/validator.logic';
 
 /**
  * Checks the request against the data, builds the package, and saves it unless none is possible. A package comes
@@ -38,6 +40,16 @@ export async function getPackage(id: string): Promise<SavedPackage> {
   const saved = await findPackage(id);
   if (!saved) throw new AppError('NOT_FOUND', 404, 'No package has this id');
   return toSavedPackage(saved.trip, saved.reference);
+}
+
+/**
+ * Every travel rule (§4) with whether the saved package passes it, for the rules panel. The validator is separate
+ * from the builder, so this is a second check of what the builder made, and of every change after it.
+ */
+export async function getPackageCheck(id: string): Promise<TripCheck> {
+  const saved = await findPackage(id);
+  if (!saved) throw new AppError('NOT_FOUND', 404, 'No package has this id');
+  return checkTrip(saved.trip, getCatalog());
 }
 
 /**

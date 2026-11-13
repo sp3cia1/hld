@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { dataResponseSchema } from './common';
 
 // Contract for the rule check: which travel rules (§4 of the statement) a package passes. The API's validator
 // fills it; the package page's rules panel shows it. Titles carry no numbers from the data (nights, dates), because
@@ -55,3 +56,7 @@ export const tripCheckSchema = z.object({
   problems: z.array(tripProblemSchema),
 });
 export type TripCheck = z.infer<typeof tripCheckSchema>;
+
+/** What GET /api/packages/:id/check returns: the rule check of the saved package, inside `{ data }`. */
+export const tripCheckResponseSchema = dataResponseSchema(tripCheckSchema);
+export type TripCheckResponse = z.infer<typeof tripCheckResponseSchema>;
