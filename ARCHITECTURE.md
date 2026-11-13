@@ -199,3 +199,62 @@ The same 864-request run, with 2 adults and 1 child and no budget limit, against
 - **16 still don't, all 3-night trips.** Three nights is too short for two cities.
 - **345 packages use two or three cities.**
 - **284 are cheaper than one city.** The median saving is ₹5,530 in Japan and ₹10,099 in the UAE.
+
+## Changing a package (M6)
+
+The traveler changes one part at a time: the hotel of one city, the arrival flight or the return flight. Every change
+runs one path, in `apps/api/src/modules/package-changes`:
+
+```
+POST /api/packages/:id/changes   { type: 'hotel', city, hotelId, roomId } | { type: 'flight', direction, flightId }
+   │
+   ▼
+service: load the trip and its updatedAt → 409 PACKAGE_CONFIRMED if BOOKED → 400 if it can't be tried (checkChange)
+   │
+   ▼
+tryChange (pure, change.logic.ts), on a copy:
+   1. swap the one item, written as the builder writes it (logic/trip-items.logic.ts); it keeps its item_id and place
+   2. a flight: any `flights` problem the validator finds on it (airport, day, home) → REFUSED now
+   3. pick again the airport transfers the item affects, with the builder's own functions (logic/airport-transfers.logic.ts)
+        the first city's hotel, or the arrival flight → the transfer from the airport
+        the last city's hotel, or the return flight   → the transfer to the airport (a one-city trip: both)
+      none runs then → REFUSED: "No airport transfer from NRT reaches Asakusa after the 22:50 landing"
+   4. total_inr = the sum of the items, then validateTrip on the whole package → any problem: REFUSED
+   │
+   ▼
+service: save only if updatedAt is unchanged (else 409 PACKAGE_CHANGED) → APPLIED, with the package as GET returns it
+```
+
+- **What the app repairs:** only the airport transfers. The app decides how and when, never what (decision record
+  0011, outside the repo): flights, hotels, visits, the cities and the moves between cities are never touched.
+- **Why the total is set before the validator runs:** the validator's prices rule checks that `total_inr` is the sum
+  of the items, so the copy's total must already be right.
+- **Over budget never refuses a change.** `toSavedPackage` labels the result `OVER_BUDGET` when the total is above
+  the budget, for a built, a loaded or a changed package alike.
+- **REFUSED is a 200,** like `NO_PACKAGE`: a valid answer to a valid request. A change needs no `Idempotency-Key`,
+  because it sets a value ("this hotel"): sending it twice gives the same package.
+
+### The choice lists and the dry run
+
+`GET /api/packages/:id/choices/hotel?city=…` and `GET /api/packages/:id/choices/flight?direction=arrival|return`
+(`choices.logic.ts`) list what the traveler can pick (decision record 0013, outside the repo):
+
+- **Hidden, and counted:** only what can never work for this party on these dates. A room type that no number of rooms
+  fits (the room-fit rule finds no `k`), and a flight with fewer seats left than travelers.
+- **Listed:** everything else. For a hotel, every room type of every hotel in that city, for that city's nights. For a
+  flight, every flight from home that lands on the start date (or flies home on the last day) at any airport of the
+  country, not only those serving the current first or last city.
+- **Each preview is a dry run:** `tryChange` without the save, the very function POST runs. READY carries the new
+  total and the difference; BLOCKED the first problem's message. A preview can't disagree with the result, because it
+  is the result. One validator pass per choice: Menon's 31 Tokyo hotel previews take 0.6 ms in all.
+- **Order:** the current choice, then READY by difference, then BLOCKED. Ties keep the catalog's order.
+
+Worked example, Menon (`FL-401` lands at `NRT` at 10:30, Ueno Garden Inn, the Narita bus to Ueno):
+
+| Choice                           | Preview        | Why                                                                                                                       |
+| -------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `FL-405`, lands at `NRT` 21:30   | READY, +₹4,620 | ₹3,780 less for 3 seats, but the pickup can't be before 22:30 and the bus to Ueno stops at 22:00, so the taxi: +₹8,400    |
+| `FL-740`, lands at `KIX`         | BLOCKED        | "KIX doesn't serve Tokyo, the first city"                                                                                 |
+| `FL-403`                         | hidden         | 2 seats left for 3 travelers                                                                                              |
+| Asakusa River Hotel, Family Room | READY, +₹5,712 | The room costs ₹5,712 more. Both airport transfers are picked again for Asakusa, and those buses cost the same as to Ueno |
+| Ginza Pearl Hotel, Family Room   | BLOCKED        | "Only 0 Family Room left on the night of 2027-04-12, and 1 are needed"                                                    |
