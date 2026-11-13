@@ -1,17 +1,36 @@
 import type { FieldError } from '@bh/shared/common';
 import type { Trip, TripItem } from '@bh/shared/holiday-package';
-import type { ChangeRequest, FlightChange, HotelChange } from '@bh/shared/package-change';
+import type {
+  AddAttraction,
+  ChangeRequest,
+  FlightChange,
+  HotelChange,
+  RemoveAttraction,
+} from '@bh/shared/package-change';
 import type { RuleId, TripProblem } from '@bh/shared/trip-check';
 import type { Catalog } from '../catalog/catalog.logic';
+import type { Attraction } from '../catalog/catalog.schemas';
 import {
   cheapestTransferFromAirport,
   cheapestTransferToAirport,
 } from '../holiday-packages/logic/airport-transfers.logic';
+import { earliestVisit } from '../holiday-packages/logic/attractions.logic';
+import { arrivalsIn } from '../holiday-packages/logic/free-time.logic';
 import type { Party } from '../holiday-packages/logic/pricing.logic';
 import { roomsByHeadcount, roomsNeeded } from '../holiday-packages/logic/rooms.logic';
-import { localDateTime, minutesOf } from '../holiday-packages/logic/time.logic';
-import { MIN_MINUTES_BEFORE_DEPARTURE } from '../holiday-packages/logic/travel-rules';
 import {
+  formatDate,
+  localDateTime,
+  minutesOf,
+  weekdayOf,
+  type Weekday,
+} from '../holiday-packages/logic/time.logic';
+import {
+  MIN_MINUTES_BEFORE_DEPARTURE,
+  VISITS_START_AT,
+} from '../holiday-packages/logic/travel-rules';
+import {
+  attractionItem,
   flightItem,
   hotelItem,
   transferItem,
@@ -24,6 +43,8 @@ import { validateTrip } from '../holiday-packages/logic/validator.logic';
 // 2. pick again the airport transfers that item affects: the app decides how and when, never what;
 // 3. check the whole package with the validator, and keep it or refuse with every reason.
 // The app never touches the traveler's "what": flights, hotels, visits, the cities, the moves between cities.
+// For a visit the traveler picks the attraction and the day; the app picks the start time and, on a change day by
+// train or bus, adds the taxi from the station that gets them to the hotel first.
 
 export type ChangeOutcome = { ok: true; trip: Trip } | { ok: false; problems: TripProblem[] };
 
@@ -44,6 +65,10 @@ function apply(trip: Trip, change: ChangeRequest, catalog: Catalog): ChangeOutco
       return changeHotel(trip, change, catalog);
     case 'flight':
       return changeFlight(trip, change, catalog);
+    case 'add_attraction':
+      return addAttraction(trip, change, catalog);
+    case 'remove_attraction':
+      return removeAttraction(trip, change, catalog);
   }
 }
 
@@ -79,7 +104,36 @@ export function checkChange(trip: Trip, change: ChangeRequest, catalog: Catalog)
       return catalog.flights.has(change.flightId)
         ? []
         : [{ path: 'flightId', message: `No flight has the id ${change.flightId}` }];
+    case 'add_attraction': {
+      const errors = checkVisitDate(trip, change.date);
+      if (!catalog.attractions.has(change.attractionId)) {
+        errors.push({
+          path: 'attractionId',
+          message: `No attraction has the id ${change.attractionId}`,
+        });
+      }
+      return errors;
+    }
+    case 'remove_attraction':
+      return trip.items.some((item) => item.item_id === change.itemId && item.type === 'attraction')
+        ? []
+        : [{ path: 'itemId', message: `${change.itemId} is not a visit in this holiday` }];
   }
+}
+
+/** No message when a visit can go on `date`: from the start date up to the day before the last day. */
+export function checkVisitDate(trip: Trip, date: string): FieldError[] {
+  if (date === trip.end_date) return [{ path: 'date', message: 'No visits on the last day' }];
+  return date >= trip.start_date && date < trip.end_date
+    ? []
+    : [{ path: 'date', message: `${formatDate(date)} is not a day of this holiday` }];
+}
+
+/** The city of the hotel the traveler sleeps in on the night of `date`. */
+export function nightCity(trip: Trip, date: string): string {
+  return trip.items.find(
+    (item) => item.type === 'hotel' && item.start <= date && date < (item.end ?? ''),
+  )!.city;
 }
 
 /** No message when `city` is a city of this package's plan. */
@@ -174,6 +228,178 @@ function changeFlight(trip: Trip, change: FlightChange, catalog: Catalog): Chang
     : returnTransferAgain(trip, items, parts, catalog);
   return repicked.ok ? { ok: true, trip: withItems(trip, repicked.items) } : repicked;
 }
+
+/**
+ * A visit on a day of the trip, at the earliest time that fits: after the day begins (09:00 on a full day, when the
+ * traveler reaches the hotel on the arrival day or a change day), while the attraction is open, and clear of the day's
+ * other visits. The traveler's other visits never move.
+ */
+function addAttraction(trip: Trip, change: AddAttraction, catalog: Catalog): ChangeOutcome {
+  const attraction = catalog.attractions.get(change.attractionId)!;
+  const { date } = change;
+  const day = formatDate(date);
+  const party = partyOf(trip);
+  const city = nightCity(trip, date);
+  const notPossible = (message: string): ChangeOutcome => ({
+    ok: false,
+    problems: [{ rule: 'attractions', itemId: null, message }],
+  });
+
+  if (attraction.city !== city) {
+    return notPossible(
+      `${attraction.name} is in ${attraction.city}, but that night's hotel is in ${city}`,
+    );
+  }
+  const already = trip.items.find(
+    (item) => item.type === 'attraction' && item.catalog_id === attraction.attraction_id,
+  );
+  if (already) {
+    return notPossible(
+      `${attraction.name} is already in your plan on ${formatDate(already.start)}`,
+    );
+  }
+  if (!attraction.open_days.includes(weekdayOf(date))) {
+    return notPossible(`${attraction.name} is closed on ${WEEKDAY_NAMES[weekdayOf(date)]}s`);
+  }
+  if (attraction.closed_dates?.includes(date)) {
+    return notPossible(`${attraction.name} is closed on ${day}`);
+  }
+
+  // The arrival day and a change day begin when the traveler reaches the hotel; a full day at VISITS_START_AT.
+  const arrival = arrivalsIn(trip, catalog, party).find((a) => a.day === date);
+  const start = earliestFreeStart(
+    attraction,
+    date,
+    arrival ? arrival.at : minutesOf(VISITS_START_AT),
+    visitsOn(trip, date),
+  );
+  if (start === null) {
+    return notPossible(
+      `No time left on ${day}: ${attraction.name} needs ${attraction.visit_minutes} minutes before it closes at ${attraction.open_until}`,
+    );
+  }
+
+  let items = trip.items;
+  const taxi = arrival?.stationTaxi;
+  if (taxi && !stationTaxiOn(trip, date, catalog)) {
+    // A visit on a change day by train or bus needs the taxi from the station to the hotel, right after the train.
+    const train = items.findIndex(
+      (item) =>
+        item.type === 'transfer' &&
+        item.start.slice(0, 10) === date &&
+        catalog.transfers.get(item.catalog_id)!.to_city === city,
+    );
+    const ride = transferItem(taxi.transfer, city, date, taxi.at, party);
+    items = insertAt(items, train + 1, { item_id: nextItemId(items), ...ride });
+  }
+  const visit = attractionItem(attraction, date, start, party);
+  items = insertAt(items, visitPosition(items, date, visit.start), {
+    item_id: nextItemId(items),
+    ...visit,
+  });
+  return { ok: true, trip: withItems(trip, items) };
+}
+
+/**
+ * The earliest start at or after `dayStart` when the attraction is open, the whole visit fits before it closes, and it
+ * overlaps none of `visits` (minutes after midnight). Tries the start of the day, then the end of each visit.
+ */
+function earliestFreeStart(
+  attraction: Attraction,
+  date: string,
+  dayStart: number,
+  visits: { start: number; end: number }[],
+): number | null {
+  const tries = [dayStart, ...visits.map((v) => v.end).filter((end) => end > dayStart)].sort(
+    (a, b) => a - b,
+  );
+  for (const from of tries) {
+    const fit = earliestVisit(attraction, date, from);
+    if (!fit) continue;
+    const end = fit.start + attraction.visit_minutes;
+    if (visits.every((v) => end <= v.start || fit.start >= v.end)) return fit.start;
+  }
+  return null;
+}
+
+/**
+ * Takes a visit out. The last visit of a full day can't go: every full day keeps one. The last visit of a change day
+ * takes the station taxi with it, which was there only for the visit.
+ */
+function removeAttraction(trip: Trip, change: RemoveAttraction, catalog: Catalog): ChangeOutcome {
+  const visit = trip.items.find((item) => item.item_id === change.itemId)!;
+  const date = visit.start.slice(0, 10);
+  const othersThatDay = visitsOn(trip, date).length - 1;
+  const changeDays = trip.items
+    .filter((item) => item.type === 'hotel')
+    .slice(1)
+    .map((item) => item.start);
+  const fullDay = date > trip.start_date && date < trip.end_date && !changeDays.includes(date);
+
+  if (fullDay && othersThatDay === 0) {
+    return refuse(
+      'attraction-days',
+      visit,
+      'Every full day keeps at least one visit: add another first, then remove this one',
+    );
+  }
+  const taxi = othersThatDay === 0 ? stationTaxiOn(trip, date, catalog) : undefined;
+  const items = trip.items.filter((item) => item !== visit && item !== taxi);
+  return { ok: true, trip: withItems(trip, items) };
+}
+
+/** The visits on `date`, in minutes after midnight. */
+function visitsOn(trip: Trip, date: string): { start: number; end: number }[] {
+  return trip.items
+    .filter((item) => item.type === 'attraction' && item.start.slice(0, 10) === date)
+    .map((item) => ({
+      start: minutesOf(item.start.slice(11)),
+      end: minutesOf(item.end!.slice(11)),
+    }));
+}
+
+/** The taxi from the station to the hotel already in the package on `date`, if any. */
+function stationTaxiOn(trip: Trip, date: string, catalog: Catalog): TripItem | undefined {
+  return trip.items.find(
+    (item) =>
+      item.type === 'transfer' &&
+      item.start.slice(0, 10) === date &&
+      catalog.transfers.get(item.catalog_id)!.type === 'CITY_TAXI',
+  );
+}
+
+/**
+ * Where a visit starting at `start` goes, in journey order: after everything else that day (its transfers and the
+ * hotel), among that day's visits by start time, before the next day.
+ */
+function visitPosition(items: TripItem[], date: string, start: string): number {
+  const next = items.findIndex((item) => {
+    const day = item.start.slice(0, 10);
+    return day > date || (day === date && item.type === 'attraction' && item.start > start);
+  });
+  return next === -1 ? items.length : next;
+}
+
+/** The next unused id of the form `iN`. The other items keep theirs. */
+function nextItemId(items: TripItem[]): string {
+  const used = items.map((item) => Number(/^i(\d+)$/.exec(item.item_id)?.[1] ?? 0));
+  return `i${Math.max(0, ...used) + 1}`;
+}
+
+function insertAt(items: TripItem[], index: number, item: TripItem): TripItem[] {
+  return [...items.slice(0, index), item, ...items.slice(index)];
+}
+
+/** For messages: "closed on Sundays". */
+const WEEKDAY_NAMES: Record<Weekday, string> = {
+  MON: 'Monday',
+  TUE: 'Tuesday',
+  WED: 'Wednesday',
+  THU: 'Thursday',
+  FRI: 'Friday',
+  SAT: 'Saturday',
+  SUN: 'Sunday',
+};
 
 type Picked = { ok: true; items: TripItem[] } | { ok: false; problems: TripProblem[] };
 

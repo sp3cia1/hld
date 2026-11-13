@@ -1,5 +1,7 @@
 import type { Trip } from '@bh/shared/holiday-package';
 import type {
+  AttractionChoice,
+  AttractionChoices,
   ChangeRequest,
   FlightChoice,
   FlightChoices,
@@ -8,10 +10,15 @@ import type {
   HotelChoices,
 } from '@bh/shared/package-change';
 import type { Catalog } from '../catalog/catalog.logic';
-import { flightPrice, hotelPrice, travelersIn } from '../holiday-packages/logic/pricing.logic';
+import {
+  attractionPrice,
+  flightPrice,
+  hotelPrice,
+  travelersIn,
+} from '../holiday-packages/logic/pricing.logic';
 import { roomsNeeded } from '../holiday-packages/logic/rooms.logic';
 import { daysBetween } from '../holiday-packages/logic/time.logic';
-import { partyOf, tryChange } from './change.logic';
+import { nightCity, partyOf, tryChange } from './change.logic';
 
 // The choices for one part of a package (decision 0013). The traveler changes one thing at a time, so a choice that
 // fails now only because of another part is still listed, with the reason: hiding it would put it out of reach. Only
@@ -99,17 +106,53 @@ export function flightChoices(
   return { choices: inOrder(choices), hidden: thatDay.length - withSeats.length };
 }
 
+/**
+ * Every attraction of the city where the traveler sleeps that night, as a visit on `date`, which must pass
+ * `checkVisitDate`. READY carries the start time the app would give it. Attractions of the country's other cities need
+ * another plan of cities: they are counted, not listed.
+ */
+export function attractionChoices(trip: Trip, date: string, catalog: Catalog): AttractionChoices {
+  const party = partyOf(trip);
+  const city = nightCity(trip, date);
+  const country = catalog.destinations.countries.find((c) => c.name === trip.country)!;
+  const hidden = country.cities
+    .filter((other) => other.name !== city)
+    .reduce((sum, other) => sum + (catalog.attractionsByCity.get(other.name)?.length ?? 0), 0);
+
+  const choices = (catalog.attractionsByCity.get(city) ?? []).map(
+    (attraction): AttractionChoice => {
+      const fields = {
+        attractionId: attraction.attraction_id,
+        name: attraction.name,
+        category: attraction.category,
+        visitMinutes: attraction.visit_minutes,
+        opensAt: attraction.open_from,
+        closesAt: attraction.open_until,
+        priceInr: attractionPrice(attraction, party),
+        current: false,
+      };
+      const change = {
+        type: 'add_attraction',
+        date,
+        attractionId: attraction.attraction_id,
+      } as const;
+      const outcome = tryChange(trip, change, catalog);
+      if (!outcome.ok) return { ...fields, ...blocked(outcome.problems[0]!.message), start: null };
+      const visit = outcome.trip.items.find(
+        (item) => item.type === 'attraction' && item.catalog_id === attraction.attraction_id,
+      )!;
+      return { ...fields, ...ready(trip, outcome.trip.total_inr), start: visit.start };
+    },
+  );
+  return { choices: inOrder(choices), hidden };
+}
+
 function preview(trip: Trip, change: ChangeRequest, catalog: Catalog): Preview {
   const outcome = tryChange(trip, change, catalog);
-  if (!outcome.ok) {
-    return {
-      status: 'BLOCKED',
-      newTotalInr: null,
-      differenceInr: null,
-      reason: outcome.problems[0]!.message,
-    };
-  }
-  const total = outcome.trip.total_inr;
+  return outcome.ok ? ready(trip, outcome.trip.total_inr) : blocked(outcome.problems[0]!.message);
+}
+
+function ready(trip: Trip, total: number): Preview & { status: 'READY' } {
   return {
     status: 'READY',
     newTotalInr: total,
@@ -118,8 +161,12 @@ function preview(trip: Trip, change: ChangeRequest, catalog: Catalog): Preview {
   };
 }
 
+function blocked(reason: string): Preview & { status: 'BLOCKED' } {
+  return { status: 'BLOCKED', newTotalInr: null, differenceInr: null, reason };
+}
+
 /** The current choice first, then READY from the smallest difference, then BLOCKED. Ties keep the catalog's order. */
-function inOrder<T extends HotelChoice | FlightChoice>(choices: T[]): T[] {
+function inOrder<T extends HotelChoice | FlightChoice | AttractionChoice>(choices: T[]): T[] {
   const rank = (choice: T) => (choice.current ? 0 : choice.status === 'READY' ? 1 : 2);
   // Array sort is stable, so equal choices stay in the order the catalog lists them.
   return [...choices].sort(

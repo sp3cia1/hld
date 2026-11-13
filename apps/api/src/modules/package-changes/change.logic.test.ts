@@ -186,3 +186,150 @@ function firstHotelInAnotherArea(trip: Trip, city: string, area: string): Trip {
   }
   throw new Error(`No hotel outside ${area} in ${city} works`);
 }
+
+describe('adding and removing visits', () => {
+  // Menon visits: i4 Senso-ji on Sun 11 Apr 09:00–10:00, then one visit a day to 15 Apr. 16 Apr is the last day.
+  const add = (date: string, attractionId: string): ChangeRequest => ({
+    type: 'add_attraction',
+    date,
+    attractionId,
+  });
+
+  it('gives a new visit the earliest time that fits, after the day’s other visits', () => {
+    const after = applied(menon, add('2027-04-11', 'ATT-TYO-001'));
+
+    expect(item(after, 'i11')).toMatchObject({
+      name: 'teamLab Planets TOKYO',
+      start: '2027-04-11T10:00',
+      end: '2027-04-11T12:00',
+    });
+    // 2 adults × ₹2,128 + the child's ₹840.
+    expect(after.total_inr - menon.total_inr).toBe(5096);
+    // The other items keep their ids; the visit sits after Senso-ji, in journey order.
+    expect(after.items.map((it) => it.item_id)).toEqual([
+      'i1',
+      'i2',
+      'i3',
+      'i4',
+      'i11',
+      'i5',
+      'i6',
+      'i7',
+      'i8',
+      'i9',
+      'i10',
+    ]);
+  });
+
+  it('takes a third visit on a day: there is no maximum after a change', () => {
+    const two = applied(menon, add('2027-04-11', 'ATT-TYO-001'));
+    const three = applied(two, add('2027-04-11', 'ATT-TYO-007'));
+
+    expect(item(three, 'i12')).toMatchObject({ name: 'Tokyo Skytree', start: '2027-04-11T12:00' });
+  });
+
+  it('starts a visit on the arrival day once the family reaches the hotel', () => {
+    // The Narita bus picks up at 11:30 and takes 90 minutes.
+    const after = applied(menon, add('2027-04-10', 'ATT-TYO-001'));
+
+    expect(item(after, 'i11')!.start).toBe('2027-04-10T13:00');
+  });
+
+  it.each([
+    [
+      'closed that weekday',
+      '2027-04-11',
+      'ATT-TYO-013',
+      'Tsukiji Outer Market is closed on Sundays',
+    ],
+    ['closed that date', '2027-04-12', 'ATT-TYO-002', 'Tokyo Disneyland is closed on 12 Apr 2027'],
+    [
+      'already in the plan',
+      '2027-04-13',
+      'ATT-TYO-004',
+      'Senso-ji is already in your plan on 11 Apr 2027',
+    ],
+    [
+      'in another city',
+      '2027-04-13',
+      'ATT-KYO-003',
+      "Kinkaku-ji is in Kyoto, but that night's hotel is in Tokyo",
+    ],
+  ])('refuses a visit %s, in the traveler’s words', (_, date, attractionId, message) => {
+    expect(tryChange(menon, add(date, attractionId), catalog)).toEqual({
+      ok: false,
+      problems: [{ rule: 'attractions', itemId: null, message }],
+    });
+  });
+
+  it('refuses a visit with no time left before closing', () => {
+    // Senso-ji 09:00–10:00, teamLab 10:00–12:00, Skytree 12:00–13:30: Disneyland's 480 minutes from 13:30 would end
+    // at 21:30, after it closes.
+    const busy = applied(
+      applied(menon, add('2027-04-11', 'ATT-TYO-001')),
+      add('2027-04-11', 'ATT-TYO-007'),
+    );
+
+    expect(tryChange(busy, add('2027-04-11', 'ATT-TYO-002'), catalog)).toEqual({
+      ok: false,
+      problems: [
+        {
+          rule: 'attractions',
+          itemId: null,
+          message:
+            'No time left on 11 Apr 2027: Tokyo Disneyland needs 480 minutes before it closes at 21:00',
+        },
+      ],
+    });
+  });
+
+  it('refuses to remove the only visit of a full day, and allows it once another is added', () => {
+    const remove = { type: 'remove_attraction', itemId: 'i4' } as const;
+
+    expect(tryChange(menon, remove, catalog)).toEqual({
+      ok: false,
+      problems: [
+        {
+          rule: 'attraction-days',
+          itemId: 'i4',
+          message:
+            'Every full day keeps at least one visit: add another first, then remove this one',
+        },
+      ],
+    });
+    const two = applied(menon, add('2027-04-11', 'ATT-TYO-001'));
+    expect(item(applied(two, remove), 'i4')).toBeUndefined();
+  });
+
+  describe('on a day the family changes city by train', () => {
+    // Delhi, 1 Apr, 5 nights: the Shinkansen to Osaka leaves Tokyo at 10:00 on 3 Apr and arrives at 12:30.
+    const trip = saved({
+      departureAirport: 'DEL',
+      country: 'JP',
+      startDate: '2027-04-01',
+      nights: 5,
+      adults: 2,
+      childAges: [6],
+      budgetInr: 350000,
+    });
+    const train = trip.items.find((it) => it.catalog_id === 'TR-TYO-OSA-01')!;
+    const visit = add('2027-04-03', 'ATT-OSA-007');
+
+    it('adds the taxi from the station, with its price, and starts the visit once it reaches the hotel', () => {
+      const after = applied(trip, visit);
+      const at = after.items.findIndex((it) => it.item_id === train.item_id);
+      const taxi = after.items[at + 1]!;
+
+      expect(taxi).toMatchObject({ catalog_id: 'TR-OSA-CITY-TAXI', start: '2027-04-03T12:30' });
+      expect(after.total_inr - trip.total_inr).toBe(taxi.price_inr + item(after, 'i12')!.price_inr);
+      expect(item(after, 'i12')!.start).toBe('2027-04-03T12:50');
+      expect(validateTrip(after, catalog)).toEqual([]);
+    });
+
+    it('takes the taxi out again with the day’s last visit', () => {
+      const after = applied(trip, visit);
+
+      expect(applied(after, { type: 'remove_attraction', itemId: 'i12' })).toEqual(trip);
+    });
+  });
+});

@@ -6,6 +6,7 @@ import { tripProblemSchema } from './trip-check';
 // Contract for changing a saved package (M6): the choices for one part, and the change itself.
 // GET  /api/packages/:id/choices/hotel?city=…    -> { data: HotelChoices }
 // GET  /api/packages/:id/choices/flight?direction=… -> { data: FlightChoices }
+// GET  /api/packages/:id/choices/attraction?date=… -> { data: AttractionChoices }
 // POST /api/packages/:id/changes  (a ChangeRequest) -> { data: ChangeResult }
 
 /** Whole rupees. The data has no paise. */
@@ -33,10 +34,27 @@ export const flightChangeSchema = z.object({
 });
 export type FlightChange = z.infer<typeof flightChangeSchema>;
 
+/** Visit an attraction on a day of the trip. The app gives it the earliest start that fits. */
+export const addAttractionSchema = z.object({
+  type: z.literal('add_attraction'),
+  date: z.iso.date(),
+  attractionId: z.string().min(1),
+});
+export type AddAttraction = z.infer<typeof addAttractionSchema>;
+
+/** Take a visit out of the package, by its item id. */
+export const removeAttractionSchema = z.object({
+  type: z.literal('remove_attraction'),
+  itemId: z.string().min(1),
+});
+export type RemoveAttraction = z.infer<typeof removeAttractionSchema>;
+
 /** One change, named by `type`. A new kind of change is one more schema in this list. */
 export const changeRequestSchema = z.discriminatedUnion('type', [
   hotelChangeSchema,
   flightChangeSchema,
+  addAttractionSchema,
+  removeAttractionSchema,
 ]);
 export type ChangeRequest = z.infer<typeof changeRequestSchema>;
 
@@ -116,6 +134,23 @@ export const flightChoiceSchema = z.discriminatedUnion('status', [
 ]);
 export type FlightChoice = z.infer<typeof flightChoiceSchema>;
 
+const attractionChoiceFields = {
+  ...choiceFields,
+  attractionId: z.string(),
+  name: z.string(),
+  category: z.string(),
+  visitMinutes: z.number().int().positive(),
+  /** Opening hours, `HH:MM`. `24:00` is midnight at the end of the day. */
+  opensAt: z.string(),
+  closesAt: z.string(),
+};
+export const attractionChoiceSchema = z.discriminatedUnion('status', [
+  /** `start` is the time the app would give the visit. */
+  z.object({ ...attractionChoiceFields, ...ready, start: localDateTime }),
+  z.object({ ...attractionChoiceFields, ...blocked, start: z.null() }),
+]);
+export type AttractionChoice = z.infer<typeof attractionChoiceSchema>;
+
 /**
  * The choices, current first, then READY from the smallest difference, then BLOCKED. `hidden` counts the choices that
  * can never work for this party and dates (room types that can't sleep everyone, flights without a seat for each
@@ -133,8 +168,17 @@ export const flightChoicesSchema = z.object({
 });
 export type FlightChoices = z.infer<typeof flightChoicesSchema>;
 
+/** `hidden` counts the attractions of the country's other cities, which need another plan of cities. */
+export const attractionChoicesSchema = z.object({
+  choices: z.array(attractionChoiceSchema),
+  hidden: z.number().int().nonnegative(),
+});
+export type AttractionChoices = z.infer<typeof attractionChoicesSchema>;
+
 export const hotelChoicesResponseSchema = dataResponseSchema(hotelChoicesSchema);
 export const flightChoicesResponseSchema = dataResponseSchema(flightChoicesSchema);
+export const attractionChoicesResponseSchema = dataResponseSchema(attractionChoicesSchema);
 
 export const hotelChoicesQuerySchema = z.object({ city: z.string().min(1) });
 export const flightChoicesQuerySchema = z.object({ direction: flightDirectionSchema });
+export const attractionChoicesQuerySchema = z.object({ date: z.iso.date() });
