@@ -1,29 +1,38 @@
 import type { BuildResult, HolidayRequest, Trip } from '@bh/shared/holiday-package';
+import { AppError } from '../../lib/app-error';
 import { runInTransaction } from '../../lib/transaction';
+import { getCatalog } from '../catalog/catalog.loader';
+import { buildPackage } from './builder.logic';
 import { insertPackage, saveTrip } from './holiday-packages.repository';
-import { MENON_EXAMPLE_TRIP } from './menon-example';
+import { checkRequest } from './request.logic';
 
-/**
- * Builds and saves a package for the request.
- * For now it always returns the fixed Menon example, whatever the request says; the builder replaces it.
- */
+/** Checks the request against the data, builds the package, and saves it unless none is possible. */
 export async function createPackage(request: HolidayRequest): Promise<BuildResult> {
+  const catalog = getCatalog();
+
+  const fields = checkRequest(request, catalog);
+  if (fields.length > 0) {
+    throw new AppError('VALIDATION_ERROR', 400, 'Some fields are invalid', { fields });
+  }
+
+  const outcome = buildPackage(request, catalog);
+  if (outcome.status === 'NO_PACKAGE') return outcome;
+
   const trip = await runInTransaction(async (tx) => {
-    const id = await insertPackage(tx, request, MENON_EXAMPLE_TRIP);
-    const saved: Trip = { ...MENON_EXAMPLE_TRIP, trip_id: id };
+    const id = await insertPackage(tx, request, outcome.trip);
+    const saved: Trip = { ...outcome.trip, trip_id: id };
     await saveTrip(tx, id, saved);
     return saved;
   });
 
-  const budget = {
-    budgetInr: trip.budget_inr,
-    totalInr: trip.total_inr,
-    leftInr: trip.budget_inr - trip.total_inr,
-  };
   return {
-    status: budget.leftInr >= 0 ? 'OK' : 'OVER_BUDGET',
+    status: outcome.status,
     packageId: trip.trip_id,
     trip,
-    budget,
+    budget: {
+      budgetInr: trip.budget_inr,
+      totalInr: trip.total_inr,
+      leftInr: trip.budget_inr - trip.total_inr,
+    },
   };
 }

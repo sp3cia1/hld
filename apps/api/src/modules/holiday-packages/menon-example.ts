@@ -1,9 +1,9 @@
 import type { Trip } from '@bh/shared/holiday-package';
 
 /**
- * A fixed, valid package for the statement's Menon request (BLR to Japan, 10 Apr 2027, 6 nights, 2 adults and a
- * child aged 6, ₹3,50,000). Every value is taken from the catalog, and every rule in §4 holds. POST returns it until
- * the builder exists, so the screens can be built against the real endpoint. `trip_id` is set when it is saved.
+ * The package the builder must return for the statement's Menon request (BLR to Japan, 10 Apr 2027, 6 nights,
+ * 2 adults and a child aged 6, ₹3,50,000), written out by hand from the catalog. Every rule in §4 holds.
+ * `builder.logic.test.ts` checks the builder against it. `trip_id` is set when a package is saved.
  */
 export const MENON_EXAMPLE_TRIP: Omit<Trip, 'trip_id'> = {
   traveler: { name: null, home_airport: 'BLR', adults: 2, children: 1, child_ages: [6] },

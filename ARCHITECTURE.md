@@ -35,6 +35,8 @@ v1 builds packages that stay in one city. v2 adds plans with several cities (see
 | Full days      | Every day after the arrival day and before the last day         | 11–15 Apr            |
 | Travelers `T`  | Adults + children. Every child needs a seat                     | 3                    |
 
+The numbers in the travel rules (60 and 180 minutes, the 09:00 start of a full day) live in `apps/api/src/modules/holiday-packages/travel-rules.ts`. The builder is `builder.logic.ts` next to it.
+
 ### Step 1: check the request
 
 The shape (types, formats) is checked by `holidayRequestSchema`. Then the values are checked against `destinations.json`:
@@ -87,9 +89,10 @@ In v1, each city of the country is one plan, with all the nights. One city alway
   - The visit starts at 09:00, or at opening time if that's later. It must end by `open_until`.
   - None on the arrival day (optional, left empty) and none on the last day (not allowed).
 - **How they're picked:**
-  - Each full day needs a different attraction. That's a **bipartite matching**: days on one side, attractions on the other, with an edge when the attraction can go on that day.
-  - We use augmenting paths (Kuhn's algorithm). A greedy pick can fail: day 1 takes the only attraction that's also open on a Monday. Augmenting paths re-assign instead.
-  - Each day's options are tried cheapest first, so the result is cheap, though not guaranteed to be the cheapest. That would need a min-cost matching, which isn't worth it while most attractions cost little.
+  - Each full day needs a different attraction, at the lowest total price. That's the **assignment problem**: days × attractions, the cost is the price, and the pair is forbidden where the attraction can't go that day.
+  - It's solved exactly with the **Hungarian algorithm** (`attractions.logic.ts`), in O(days² × attractions). A city has at most about 15 attractions, so that's instant.
+  - Picking day by day fails. If day 1 takes the free attraction that day 2 also needs, day 2 gets nothing or pays more. In tests on the real data, a day-by-day pick overpaid by up to ₹1,120: on Monday 12 Apr most free attractions are closed.
+  - On equal price, the attraction listed first in the catalog wins.
 - **No match:** if some full day can't get an attraction, the city fails.
 
 **f. Prices.** All whole INR.
@@ -114,13 +117,16 @@ The total is the sum of the parts.
 
 Each city stops at the first step it fails. The answer is the reason from the city that got furthest, in the traveler's words:
 
-| Stopped at       | Message, for example                                                                                                                                               |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Arrival flight   | "No flight from Chennai lands in Japan on 10 Apr 2027." Or, when flights exist without enough seats: "No flight landing in Japan on 10 Apr 2027 has 3 seats left." |
-| Return flight    | The same, for the last day                                                                                                                                         |
-| Hotel room       | "No hotel in Osaka has a room for 2 adults and 1 child free on every night."                                                                                       |
-| Airport transfer | "No airport transfer runs at the times these flights need."                                                                                                        |
-| Attractions      | "Not enough different attractions are open in Osaka on the full days."                                                                                             |
+| Stopped at       | Code                | Message, for example                                                                                                                                             |
+| ---------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arrival flight   | `NO_ARRIVAL_FLIGHT` | "No flight from Chennai lands in Japan on 10 Apr 2027."                                                                                                          |
+|                  | `NO_ARRIVAL_SEATS`  | "No flight from Delhi landing in Japan on 1 Apr 2027 has 5 seats left."                                                                                          |
+| Return flight    | `NO_RETURN_FLIGHT`  | "No flight back to Mumbai leaves Japan on 4 Apr 2027."                                                                                                           |
+|                  | `NO_RETURN_SEATS`   | The same, when flights exist without enough seats                                                                                                                |
+|                  | `NO_COMMON_CITY`    | "On 2 Apr 2027 flights land only at NRT, and on 5 Apr 2027 flights back leave only from KIX. No city is served by both." (v1 only: v2 can go through two cities) |
+| Hotel room       | `NO_ROOM`           | "No hotel in Osaka has rooms for 2 adults and 1 child free on every night."                                                                                      |
+| Airport transfer | `NO_TRANSFER`       | "No airport transfer in Osaka runs at the times these flights need."                                                                                             |
+| Attractions      | `NO_ATTRACTIONS`    | "Not enough different attractions are open in Osaka to fill every full day."                                                                                     |
 
 ### Step 6: write the package
 
@@ -139,7 +145,7 @@ Times are local, without seconds (`YYYY-MM-DDTHH:MM`). A flight's `city` is wher
 
 ### How big the search is
 
-Per city: room types × (arrival flights + return flights) × transfers, which is a few thousand checks. A prototype of this logic in Python built packages for 864 requests in 0.4 s (13 Nov). The requests covered every departure city, both countries, every start date and trip length, with 2 adults and 1 child.
+Per city: room types × (arrival flights + return flights) × transfers, which is a few thousand checks. The builder answers 864 requests in about 80 ms (13 Nov). The requests covered every departure city, both countries, every start date and trip length, with 2 adults and 1 child.
 
 ### Worked example: Menon
 

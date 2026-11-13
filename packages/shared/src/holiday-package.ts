@@ -19,18 +19,28 @@ export const holidayRequestSchema = z.object({
   /** Destination country code from `GET /api/options`, for example `JP`. */
   country: z.string().min(1, 'Choose a country'),
   /** The first day in the destination country: the arrival flight lands on this day. */
-  startDate: localDate,
-  nights: z.number().int('Nights must be a whole number').positive('Choose at least one night'),
-  adults: z.number().int('Adults must be a whole number').min(1, 'At least one adult must travel'),
+  // `error` on a type sets the message for a missing value, such as an empty form field.
+  startDate: z.iso.date({ error: 'Choose a start date' }),
+  nights: z
+    .number({ error: 'Enter the number of nights' })
+    .int('Nights must be a whole number')
+    .positive('Choose at least one night'),
+  adults: z
+    .number({ error: 'Enter the number of adults' })
+    .int('Adults must be a whole number')
+    .min(1, 'At least one adult must travel'),
   /** One age per child. A child is anyone aged 0 to 17. */
   childAges: z.array(
     z
-      .number()
+      .number({ error: "Enter the child's age" })
       .int('Ages must be whole numbers')
       .min(0, 'Ages start at 0')
       .max(17, 'Anyone 18 or older travels as an adult'),
   ),
-  budgetInr: z.number().int('Budget must be in whole rupees').positive('Enter a budget above 0'),
+  budgetInr: z
+    .number({ error: 'Enter a budget' })
+    .int('Budget must be in whole rupees')
+    .positive('Enter a budget above 0'),
 });
 export type HolidayRequest = z.infer<typeof holidayRequestSchema>;
 
