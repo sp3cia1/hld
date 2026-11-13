@@ -1,3 +1,22 @@
+import type { Attraction } from '../../catalog/catalog.schemas';
+import { weekdayOf, windowOf } from './time.logic';
+
+/**
+ * The earliest start of a visit on `day`, at or after `from` (minutes after midnight), and the closing time. Null when
+ * the attraction is closed that day or the whole visit no longer fits before it closes (§4).
+ */
+export function earliestVisit(
+  attraction: Attraction,
+  day: string,
+  from: number,
+): { start: number; closes: number } | null {
+  if (!attraction.open_days.includes(weekdayOf(day))) return null;
+  if (attraction.closed_dates?.includes(day)) return null;
+  const [opens, closes] = windowOf(attraction.open_from, attraction.open_until);
+  const start = Math.max(from, opens);
+  return start + attraction.visit_minutes <= closes ? { start, closes } : null;
+}
+
 /** Something a day can take, and what it costs. */
 export type Option = { id: string; cost: number };
 

@@ -33,7 +33,7 @@ export function PackagePage() {
     return <ErrorState error={saved.error} onRetry={() => void saved.refetch()} />;
   }
 
-  const { trip, budget, status } = saved.data.data;
+  const { trip, budget, status, freeTime } = saved.data.data;
   return (
     <div className="space-y-8">
       <div className="space-y-2">
@@ -50,7 +50,7 @@ export function PackagePage() {
         </p>
       )}
       <BudgetSummary budget={budget} />
-      <DayByDay items={trip.items} />
+      <DayByDay items={trip.items} freeTime={freeTime} />
     </div>
   );
 }

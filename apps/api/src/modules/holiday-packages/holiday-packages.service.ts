@@ -2,11 +2,15 @@ import type { BuildResult, HolidayRequest, SavedPackage, Trip } from '@bh/shared
 import { AppError } from '../../lib/app-error';
 import { runInTransaction } from '../../lib/transaction';
 import { getCatalog } from '../catalog/catalog.loader';
-import { buildPackage } from './builder.logic';
+import { buildPackage } from './logic/builder.logic';
+import { freeTimeIn } from './logic/free-time.logic';
 import { findTrip, insertPackage, saveTrip } from './holiday-packages.repository';
-import { checkRequest } from './request.logic';
+import { checkRequest } from './logic/request.logic';
 
-/** Checks the request against the data, builds the package, and saves it unless none is possible. */
+/**
+ * Checks the request against the data, builds the package, and saves it unless none is possible. A package comes
+ * back with the free time on the days it leaves open.
+ */
 export async function createPackage(request: HolidayRequest): Promise<BuildResult> {
   const catalog = getCatalog();
 
@@ -49,5 +53,6 @@ function toSavedPackage(trip: Trip): SavedPackage {
       totalInr: trip.total_inr,
       leftInr: trip.budget_inr - trip.total_inr,
     },
+    freeTime: freeTimeIn(trip, getCatalog()),
   };
 }

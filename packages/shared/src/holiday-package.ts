@@ -113,6 +113,35 @@ export const budgetSummarySchema = z.object({
 });
 export type BudgetSummary = z.infer<typeof budgetSummarySchema>;
 
+/**
+ * Free time on a day the first package leaves open: the arrival day, and each day the traveler moves city. These are
+ * the attractions that still fit once the traveler reaches the hotel, cheapest first, for the traveler to choose from.
+ */
+export const freeTimeSchema = z.object({
+  date: localDate,
+  city: z.string(),
+  /** When the traveler reaches the hotel. A visit can start from then. */
+  freeFrom: localDateTime,
+  /** City-change day: a visit also adds the taxi from the station to the hotel, at this price. Otherwise null. */
+  stationTaxiInr: inr.nullable(),
+  attractions: z
+    .array(
+      z.object({
+        attractionId: z.string(),
+        name: z.string(),
+        /** When the traveler is free, or the opening time if that is later. */
+        earliestStart: localDateTime,
+        /** The closing time: the visit must end by then. */
+        endBy: localDateTime,
+        visitMinutes: z.number().int().positive(),
+        /** For the whole party. */
+        priceInr: inr,
+      }),
+    )
+    .min(1),
+});
+export type FreeTime = z.infer<typeof freeTimeSchema>;
+
 /** Why no package is possible (M2). `message` is written for the traveler. */
 export const noPackageReasonSchema = z.object({
   code: z.string(),
@@ -124,6 +153,7 @@ export type NoPackageReason = z.infer<typeof noPackageReasonSchema>;
  * What POST /api/packages returns inside `{ data }`.
  * - OK (201): a package within budget, saved.
  * - OVER_BUDGET (201): no package fits the budget, so this is the cheapest one, saved and labelled (M8).
+ * Both list the free time on the days the package leaves open (`freeTime`).
  * - NO_PACKAGE (200): no package is possible for this request. Nothing is saved.
  * A value that is not valid is a 400 VALIDATION_ERROR instead (see `apiErrorSchema` in common.ts).
  */
@@ -133,12 +163,14 @@ export const buildResultSchema = z.discriminatedUnion('status', [
     packageId: z.string(),
     trip: tripSchema,
     budget: budgetSummarySchema,
+    freeTime: z.array(freeTimeSchema),
   }),
   z.object({
     status: z.literal('OVER_BUDGET'),
     packageId: z.string(),
     trip: tripSchema,
     budget: budgetSummarySchema,
+    freeTime: z.array(freeTimeSchema),
   }),
   z.object({
     status: z.literal('NO_PACKAGE'),
@@ -159,6 +191,7 @@ export const savedPackageSchema = z.object({
   packageId: z.string(),
   trip: tripSchema,
   budget: budgetSummarySchema,
+  freeTime: z.array(freeTimeSchema),
 });
 export type SavedPackage = z.infer<typeof savedPackageSchema>;
 

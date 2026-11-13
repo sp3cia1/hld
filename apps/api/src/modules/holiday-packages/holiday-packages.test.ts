@@ -31,6 +31,7 @@ describe('POST /api/packages', () => {
     const sum = data.trip.items.reduce((total, item) => total + item.price_inr, 0);
     expect(data.trip.total_inr).toBe(sum);
     expect(data.budget.leftInr).toBe(data.budget.budgetInr - data.budget.totalInr);
+    expect(data.freeTime.map((free) => free.freeFrom)).toEqual(['2027-04-10T13:00']);
 
     const stored = await prisma.package.findUniqueOrThrow({ where: { id: data.packageId } });
     expect(stored.trip).toEqual(data.trip);

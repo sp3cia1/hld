@@ -15,9 +15,10 @@ Word-for-word answers from tools given the plain prompt (statement + dataset REA
   - `validate(package) → violations[]` checks every rule in section 4.
 
   The API never returns a package or accepts a change until `validate` comes back empty. That one design choice covers M3, M6, G1 and most of the "correctness on judge requests" score.
+
 - **Search approach:** the search space is small (at most 10 nights, a handful of cities, 20 days of data). So list every valid city plan, choose flights for each plan, then fill hotels, transfers and attractions greedily. That's brute force with pruning. Don't use clever optimisation.
 - **Demo hook:** a live **rule checklist** on screen that turns green after every change. The judges score correctness, so show them correctness.
-- **Pitch:** *"Change anything. It stays bookable."*
+- **Pitch:** _"Change anything. It stays bookable."_
 
 ## Step 0 (first 45 minutes, both of you)
 
@@ -89,7 +90,7 @@ Q&A: build pipeline, validator, change repair, restart survival; live change in 
 
 ## Pitch headline
 
-**"Change anything. It stays bookable."** Backup: *"Every package checks itself against every rule before you see it."*
+**"Change anything. It stays bookable."** Backup: _"Every package checks itself against every rule before you see it."_
 
 ## Gemini
 
@@ -103,35 +104,25 @@ Here is the blueprint to win this with a 2-person team.
 
 ### The Stack (Optimized for Speed & Zero Setup)
 
-* **Backend (Person A):** **Python + FastAPI** (or Node/TypeScript). Load all 8 JSON files into memory at startup into indexed dictionaries. Use **SQLite** (or a single `state.db` / `reservations.json` file synced to disk) so packages and 10-digit reservation numbers survive server restarts (`M7`, Section 7).
+- **Backend (Person A):** **Python + FastAPI** (or Node/TypeScript). Load all 8 JSON files into memory at startup into indexed dictionaries. Use **SQLite** (or a single `state.db` / `reservations.json` file synced to disk) so packages and 10-digit reservation numbers survive server restarts (`M7`, Section 7).
 
+- **Frontend (Person B):** **React + Vite + Tailwind CSS + Lucide Icons**. Fast to scaffold, easy to make look polished (15% of grade is UX).
 
-* **Frontend (Person B):** **React + Vite + Tailwind CSS + Lucide Icons**. Fast to scaffold, easy to make look polished (15% of grade is UX).
-
-
-* **1-Command Start:** A root `Makefile` or `start.sh` that runs `uvicorn` and `vite` concurrently.
-
-
+- **1-Command Start:** A root `Makefile` or `start.sh` that runs `uvicorn` and `vite` concurrently.
 
 ### The Secret Weapon: Build the Validator First
 
 Judges use an automated tool to check your exported JSON against Section 4 rules. Before writing the package builder, write `validate_package(pkg, request) -> list[str]`.
 
-* If it returns `[]`, the package is 100% legal.
+- If it returns `[]`, the package is 100% legal.
 
+- You will use this exact function to:
 
-* You will use this exact function to:
 1. Verify every candidate package your solver generates.
-
 
 2. Validate user edits in `M6` (and return the exact human-readable refusal reason if they pick a flight or hotel that breaks a transfer or room rule).
 
-
 3. Guarantee your exported JSON passes the judges' automated grader.
-
-
-
-
 
 ### The Solver Algorithm (Deterministic Exhaustive Search)
 
@@ -139,36 +130,25 @@ Since $3 \le \text{nights} \le 10$ and each city requires $\ge 2$ consecutive ni
 
 For a user request, run this pipeline in memory:
 
-1. **Generate City Splits:** Enumerate all valid city sequences where each city has $\ge 2$ nights. (Default "City Rule" for README: *Maximize distinct cities visited up to $\lfloor\text{nights}/2\rfloor$, ordered geographically along the country's transit links, breaking ties by total cost*).
-
+1. **Generate City Splits:** Enumerate all valid city sequences where each city has $\ge 2$ nights. (Default "City Rule" for README: _Maximize distinct cities visited up to $\lfloor\text{nights}/2\rfloor$, ordered geographically along the country's transit links, breaking ties by total cost_).
 
 2. **Filter Arrival & Return Flights:**
-* Arrival: `from == dep_airport`, `arrival_local` date == `start_date`, `first_city in airport.serves_cities`, and `seats_left >= travelers`.
 
+- Arrival: `from == dep_airport`, `arrival_local` date == `start_date`, `first_city in airport.serves_cities`, and `seats_left >= travelers`.
 
-* Return: `to == dep_airport`, `departure_local` date == `last_day` (`start_date + nights`), `last_city in airport.serves_cities`, and `seats_left >= travelers`.
+- Return: `to == dep_airport`, `departure_local` date == `last_day` (`start_date + nights`), `last_city in airport.serves_cities`, and `seats_left >= travelers`.
 
-
-* *If none exist:* Immediately record the exact reason for `M2` (e.g., *"No flights from Chennai to Japan land on 10 April 2027"*).
-
-
-
+- _If none exist:_ Immediately record the exact reason for `M2` (e.g., _"No flights from Chennai to Japan land on 10 April 2027"_).
 
 3. **Match Hotels & Airport Transfers Jointly (Crucial Edge Case!):**
-* An airport transfer must match the flight's `airport` AND the hotel's `city` and `area` (or `area == null`).
 
+- An airport transfer must match the flight's `airport` AND the hotel's `city` and `area` (or `area == null`).
 
-* **The Late-Landing Trap:** 5 one-stop flights from BLR to KIX land between `22:10` and `22:50`. Adding the mandatory 60-minute buffer puts pickup at `23:10`–`23:50`. Only **one** KIX transfer runs that late: the `06:00`–`00:30` shuttle to **Namba, Osaka**. Therefore, if a flight lands late at KIX, only hotels in `Namba` (or served by a `00:30` transfer) are valid!
+- **The Late-Landing Trap:** 5 one-stop flights from BLR to KIX land between `22:10` and `22:50`. Adding the mandatory 60-minute buffer puts pickup at `23:10`–`23:50`. Only **one** KIX transfer runs that late: the `06:00`–`00:30` shuttle to **Namba, Osaka**. Therefore, if a flight lands late at KIX, only hotels in `Namba` (or served by a `00:30` transfer) are valid!
 
+- **Time-Window Math Helper:** Convert `"HH:MM"` to minutes from midnight (`24:00` = 1440). If `service_until < service_from` (like `06:00` to `00:30`), treat `service_until` as `1440 + 30 = 1470`, and treat a post-midnight pickup on the landing night accordingly.
 
-* **Time-Window Math Helper:** Convert `"HH:MM"` to minutes from midnight (`24:00` = 1440). If `service_until < service_from` (like `06:00` to `00:30`), treat `service_until` as `1440 + 30 = 1470`, and treat a post-midnight pickup on the landing night accordingly.
-
-
-* **Room Fit Math:** For each hotel and room type, test room counts $k \in \{1 \dots \text{adults}\}$. Check:
-
-
-
-
+- **Room Fit Math:** For each hotel and room type, test room counts $k \in \{1 \dots \text{adults}\}$. Check:
 
 $$\text{adults} \le k \times \text{max\_adults} \quad \text{AND} \quad (\text{adults} + \text{children}) \le k \times (\text{max\_adults} + \text{max\_children})$$
 
@@ -179,86 +159,71 @@ $$\text{adults} \le k \times \text{max\_adults} \quad \text{AND} \quad (\text{ad
 
 4. **Intercity Transfers:** On city-change days, pick the link from `destinations.json` (`from_city` $\to$ `to_city`). Schedule it at a clean morning hour (e.g., `10:00`, snapping to `frequency_minutes` inside `service_from`–`service_until`). Do **not** add optional station city taxis—they complicate timing and inflate cost for zero extra points.
 
-
 5. **Greedy Attraction Scheduler:**
-* Filter attractions where `city == hotel.city`, weekday in `open_days`, date not in `closed_dates` (watch out for **Monday 12 April** and **Edo Craft Museum**!), and `city != "Nara"`.
 
+- Filter attractions where `city == hotel.city`, weekday in `open_days`, date not in `closed_dates` (watch out for **Monday 12 April** and **Edo Craft Museum**!), and `city != "Nara"`.
 
-* On each **full day**, greedily pick 2 non-overlapping attractions (e.g., Slot 1 starting at `max(09:30, open_from)`, Slot 2 starting after Slot 1 ends + 60 min buffer) ensuring `start + visit_minutes <= open_until`. (Watch out for 480-minute theme parks like Universal Studios / Disneyland—if chosen, they take the whole day, satisfying the "1–2 attractions" rule by themselves!).
+- On each **full day**, greedily pick 2 non-overlapping attractions (e.g., Slot 1 starting at `max(09:30, open_from)`, Slot 2 starting after Slot 1 ends + 60 min buffer) ensuring `start + visit_minutes <= open_until`. (Watch out for 480-minute theme parks like Universal Studios / Disneyland—if chosen, they take the whole day, satisfying the "1–2 attractions" rule by themselves!).
 
-
-* Leave arrival day, city-change days, and the last day with **0 automatic attractions** (the rules say arrival/city-change days are *optional*, and last day is *forbidden*—keeping arrival/city-change days empty by default avoids transfer-overlap bugs while still letting users add them in `M6`).
-
-
-
-
+- Leave arrival day, city-change days, and the last day with **0 automatic attractions** (the rules say arrival/city-change days are _optional_, and last day is _forbidden_—keeping arrival/city-change days empty by default avoids transfer-overlap bugs while still letting users add them in `M6`).
 
 ### Why You Should Build `G4` (Three Packages) Automatically
 
 Since your solver evaluates all valid combinations in milliseconds, **keep track of three winners simultaneously**:
 
-1. **Cheapest** (lowest total INR—Even if over budget, you *need* this anyway to satisfy `M8: Budget too small`!).
-
+1. **Cheapest** (lowest total INR—Even if over budget, you _need_ this anyway to satisfy `M8: Budget too small`!).
 
 2. **Fastest** (lowest `flight_1.duration + flight_2.duration + sum(intercity_transfer.duration)` within budget).
 
-
 3. **Best Rated** (highest average `hotel.stars` per night within budget—note: use `stars`, NOT `rating`!).
-And include **G2 (Price Difference)** (`+₹4,200` / `-₹1,500` badges on swap dropdowns) and **G3 (Change Cities dropdown)** because your solver already computes them for free!
-
-
+   And include **G2 (Price Difference)** (`+₹4,200` / `-₹1,500` badges on swap dropdowns) and **G3 (Change Cities dropdown)** because your solver already computes them for free!
 
 ---
 
 ### 9-Hour Execution Timeline (Team of 2)
 
-| Hours | Person A (Backend & Solver Engine) | Person B (Frontend, UX & Export) |
-| --- | --- | --- |
-| **0:00 – 1:30** | Load catalog JSONs; write pricing formulas, clock/window parser, and `validate_package()`.
+| Hours           | Person A (Backend & Solver Engine)                                                         | Person B (Frontend, UX & Export) |
+| --------------- | ------------------------------------------------------------------------------------------ | -------------------------------- |
+| **0:00 – 1:30** | Load catalog JSONs; write pricing formulas, clock/window parser, and `validate_package()`. |
 
- | Scaffold React + Tailwind; lock API JSON contract with Person A; build `M1` Request Form with validation.
+| Scaffold React + Tailwind; lock API JSON contract with Person A; build `M1` Request Form with validation.
 
- |
+|
 | **1:30 – 3:30** | Build the core Solver (`M2`, `M3`, `M8`) returning Cheapest, Fastest, and Best Rated (`G4`).
 
- | Build Day-by-Day Timeline (`M4`), Sticky Budget Bar (`M5`), and JSON Export formatter (`Section 6`).
+| Build Day-by-Day Timeline (`M4`), Sticky Budget Bar (`M5`), and JSON Export formatter (`Section 6`).
 
- |
+|
 | **3:30 – 5:30** | Build Swap/Edit endpoints (`M6`, `G1`, `G2`, `G3`): pre-calculate valid swaps + price deltas + refusal reasons.
 
- | Build interactive Swap Modals/Drawers for Flights, Hotels, and Attractions with live price deltas (`G2`).
+| Build interactive Swap Modals/Drawers for Flights, Hotels, and Attractions with live price deltas (`G2`).
 
- |
+|
 | **5:30 – 7:00** | Build SQLite persistence, 10-digit reservation generator (`M7`), and inventory deduction on confirm (`S2`).
 
- | Build Confirmation View, 10-digit Lookup Search bar (`M7`), and image attribution footer.
+| Build Confirmation View, 10-digit Lookup Search bar (`M7`), and image attribution footer.
 
- |
+|
 | **7:00 – 8:00** | **Bonus:** Write regex/keyword parser for `S1` (Quick Request in plain words, no LLM).
 
- | **Torture Testing:** Test Chennai/Mumbai no-flight dates, late KIX landings, 0-budget, and JSON export schema.
+| **Torture Testing:** Test Chennai/Mumbai no-flight dates, late KIX landings, 0-budget, and JSON export schema.
 
- |
+|
 | **8:00 – 9:00** | Write `README.md` (startup commands, architecture, city rule, limitations), clean Git commits, zip for HackerEarth.
 
- | Rehearse the 4-minute Menon demo flow + prep for the 20% live code-change question.
+| Rehearse the 4-minute Menon demo flow + prep for the 20% live code-change question.
 
- |
+|
 
 ### Critical Gotchas Checklist (Do Not Miss These!)
 
-* **Export JSON Timestamps:** Catalog flights have seconds (`2027-04-09T23:50:00`), but the judges' export validator requires `YYYY-MM-DDTHH:MM` (strip `:00`!) for flights/transfers/attractions and `YYYY-MM-DD` for hotels.
+- **Export JSON Timestamps:** Catalog flights have seconds (`2027-04-09T23:50:00`), but the judges' export validator requires `YYYY-MM-DDTHH:MM` (strip `:00`!) for flights/transfers/attractions and `YYYY-MM-DD` for hotels.
 
+- **Export JSON Fields:** `trip_format_example.json` is missing `"country"` at the root—Section 6 explicitly requires `"country"`, `"room_id"` on hotels, `"sources": []`, and on confirm: `"status": "BOOKED"` and `"booking": {"reference": "1234567890"}`.
 
-* **Export JSON Fields:** `trip_format_example.json` is missing `"country"` at the root—Section 6 explicitly requires `"country"`, `"room_id"` on hotels, `"sources": []`, and on confirm: `"status": "BOOKED"` and `"booking": {"reference": "1234567890"}`.
+- **Child Pricing Fallback:** When `child_price` is `null`/missing (25 attractions, 34 transfers), children pay the full adult `price`. When `child_price.amount == 0` (5 attractions), children go free!
 
-
-* **Child Pricing Fallback:** When `child_price` is `null`/missing (25 attractions, 34 transfers), children pay the full adult `price`. When `child_price.amount == 0` (5 attractions), children go free!
-
-
-* **Both Members Must Know the Code (20% of Grade):** Spend 20 minutes at Hour 7 walking each other through the backend solver and frontend state so either of you can make a live code tweak on the spot.
-
-
+- **Both Members Must Know the Code (20% of Grade):** Spend 20 minutes at Hour 7 walking each other through the backend solver and frontend state so either of you can make a live code tweak on the spot.
 
 ---
 
@@ -266,52 +231,32 @@ And include **G2 (Price Difference)** (`+₹4,200` / `-₹1,500` badges on swap 
 
 Your live demo portion is strictly **4 minutes** before judges throw custom test cases at you for 3 minutes. Choreograph the 4 minutes like a product launch:
 
-* **0:00 – 0:45 | Fast Start & The Menon Request (`M1`, `S1`, `G4`):**
-Start with an empty form. Type `"Bengaluru to Japan, 10 Apr 2027, 6 nights, 2 adults, 1 child age 6, budget 350000"` into your Quick Request bar (`S1`) to auto-fill the 7 fields, and click **Build My Holiday**. Point out that in <20ms, the app chose a 2-city or 3-city route (e.g., Tokyo $\to$ Kyoto) and generated three distinct options (`G4`): **Cheapest**, **Fastest**, and **Best Rated**.
+- **0:00 – 0:45 | Fast Start & The Menon Request (`M1`, `S1`, `G4`):**
+  Start with an empty form. Type `"Bengaluru to Japan, 10 Apr 2027, 6 nights, 2 adults, 1 child age 6, budget 350000"` into your Quick Request bar (`S1`) to auto-fill the 7 fields, and click **Build My Holiday**. Point out that in <20ms, the app chose a 2-city or 3-city route (e.g., Tokyo $\to$ Kyoto) and generated three distinct options (`G4`): **Cheapest**, **Fastest**, and **Best Rated**.
 
+- **0:45 – 1:30 | The Day-by-Day Plan & Rule Proof (`M3`, `M4`, `M5`):**
+  Select the package. Scroll through the chronological timeline (`M4`):
 
-* **0:45 – 1:30 | The Day-by-Day Plan & Rule Proof (`M3`, `M4`, `M5`):**
-Select the package. Scroll through the chronological timeline (`M4`):
+- Point out `FL-403` (₹21,420) was _automatically skipped_ because it only has 2 seats left and the Menons need 3 (`FL-401` or `FL-405` was chosen instead).
 
+- Show the 60-minute airport pickup buffer, the intercity Shinkansen train, the family room allocation, and non-overlapping attractions.
 
-* Point out `FL-403` (₹21,420) was *automatically skipped* because it only has 2 seats left and the Menons need 3 (`FL-401` or `FL-405` was chosen instead).
+- Highlight the sticky budget tracker (`M5`): Total price vs. ₹3,50,000 budget and exact rupees remaining.
 
+- **1:30 – 2:45 | Live Edits, Price Deltas & Guardrails (`M6`, `G1`, `G2`, `G3`):**
+- **Valid Hotel Swap (`M6`, `G2`):** Click "Change Hotel" in Kyoto. Show that every alternative displays the exact price delta (`+₹3,200` / `-₹1,400`). Swap the hotel and watch the airport/city transfer and total budget update live.
 
-* Show the 60-minute airport pickup buffer, the intercity Shinkansen train, the family room allocation, and non-overlapping attractions.
+- **Guardrail Refusal (`M6`, `G1`):** Try to add **Tokyo Disneyland** on **Monday, 12 April 2027** (or try to pick a flight that breaks transfer service hours). Show the app cleanly refusing the change with the exact rule reason: _"Refused: Tokyo Disneyland is closed on 2027-04-12 (closed_dates)."_ Then add a valid attraction and remove another.
 
+- **2:45 – 3:30 | Confirm, Restart Survival & Export (`M7`, `S2`, `Section 6`):**
+- Click **Confirm Package** to generate the **10-digit reservation number**.
 
-* Highlight the sticky budget tracker (`M5`): Total price vs. ₹3,50,000 budget and exact rupees remaining.
+- Click **Download JSON** (`Section 6`) so it's ready for the judges' grading tool.
 
+- **The Flex:** Kill and restart the backend server in your terminal, paste the 10-digit reservation number into the lookup box, and show the complete confirmed itinerary reloads instantly (`M7`). Also enter a fake number (`0000000000`) to show the required `"Not Found"` state.
 
-
-
-* **1:30 – 2:45 | Live Edits, Price Deltas & Guardrails (`M6`, `G1`, `G2`, `G3`):**
-* **Valid Hotel Swap (`M6`, `G2`):** Click "Change Hotel" in Kyoto. Show that every alternative displays the exact price delta (`+₹3,200` / `-₹1,400`). Swap the hotel and watch the airport/city transfer and total budget update live.
-
-
-* **Guardrail Refusal (`M6`, `G1`):** Try to add **Tokyo Disneyland** on **Monday, 12 April 2027** (or try to pick a flight that breaks transfer service hours). Show the app cleanly refusing the change with the exact rule reason: *"Refused: Tokyo Disneyland is closed on 2027-04-12 (closed_dates)."* Then add a valid attraction and remove another.
-
-
-
-
-* **2:45 – 3:30 | Confirm, Restart Survival & Export (`M7`, `S2`, `Section 6`):**
-* Click **Confirm Package** to generate the **10-digit reservation number**.
-
-
-* Click **Download JSON** (`Section 6`) so it's ready for the judges' grading tool.
-
-
-* **The Flex:** Kill and restart the backend server in your terminal, paste the 10-digit reservation number into the lookup box, and show the complete confirmed itinerary reloads instantly (`M7`). Also enter a fake number (`0000000000`) to show the required `"Not Found"` state.
-
-
-
-
-* **3:30 – 4:00 | Edge-Case Readiness (`M8`, `M2`):**
-* Quickly change the budget to `₹1,00,000` to trigger `M8`: the app states no package fits, displays the exact **cheapest possible total** (e.g., `₹2,18,xxx`), and offers a 1-click suggestion (*"Increase budget by ₹1,18,xxx or reduce trip from 6 to 4 nights"*). Hand the keyboard to the judges right at 4:00.
-
-
-
-
+- **3:30 – 4:00 | Edge-Case Readiness (`M8`, `M2`):**
+- Quickly change the budget to `₹1,00,000` to trigger `M8`: the app states no package fits, displays the exact **cheapest possible total** (e.g., `₹2,18,xxx`), and offers a 1-click suggestion (_"Increase budget by ₹1,18,xxx or reduce trip from 6 to 4 nights"_). Hand the keyboard to the judges right at 4:00.
 
 ---
 
@@ -385,8 +330,6 @@ The same validator should run after every user modification.
 The judges explicitly test unseen requests and changes, so a hardcoded Menon itinerary is not going to cut it.&#x20;
 
 PROBLEM.md
-
-
 
 # **2. Technology stack**
 
@@ -472,8 +415,6 @@ You have a relatively small dataset:
 There are only three Japanese destination cities and two UAE destination cities. This is a manageable search problem, especially if you filter candidates early.&#x20;
 
 profile.md
-
-
 
 I would not build a complicated optimization solver.
 
@@ -805,8 +746,6 @@ Also, `traveler.name` is an unresolved question in your problem notes. The form 
 
 PROBLEM.md
 
-
-
 # **7. What I'd build on the frontend**
 
 Don't spend three hours building a fancy landing page.
@@ -864,21 +803,27 @@ Validated
 1. **10 April · Arrival**
 
    Flight → Airport transfer → Hotel check-in
+
 2. **11 April · Exploration**
 
    Attraction → Free time → Hotel
+
 3. **12 April · City change**
 
    Checkout → Intercity transfer → New hotel
+
 4. **13 April · Exploration**
 
    Attraction → Free time → Hotel
+
 5. **14 April · City change**
 
    Checkout → Intercity transfer → New hotel
+
 6. **15 April · Exploration**
 
    Attraction → Free time → Hotel
+
 7. **16 April · Departure**
 
    Airport transfer → Return flight
@@ -1017,8 +962,6 @@ PROBLEM.md
 
 profile.md
 
-
-
 One more important distinction:
 
 **No feasible package is not the same as no package within budget.**
@@ -1123,7 +1066,7 @@ The problem explicitly says that one correct package is better than three broken
 
 I would take that literally.
 
-One thing I would spend extra time on is a good interface for errors. Most teams focus on the happy path. But a product that explains *why* a particular flight, hotel or transfer cannot work feels much more complete.
+One thing I would spend extra time on is a good interface for errors. Most teams focus on the happy path. But a product that explains _why_ a particular flight, hotel or transfer cannot work feels much more complete.
 
 # **12. Your one-line pitch**
 
@@ -1219,6 +1162,7 @@ What most teams will build, demo and say. All three answers agree unless a line 
    - the rules panel all green and the budget bar showing ₹ left.
 
    Gemini points out that `FL-403` was skipped because it has only 2 seats.
+
 3. Change the hotel: the options show ±₹, the total updates, and the airport transfer is re-picked if the area changed.
 4. An invalid change is refused with the exact reason: a clashing attraction, Disneyland on 12 Apr, or a flight at the wrong airport. Claude also moves the arrival flight later and shows the G1 popup.
 5. Confirm, get the 10-digit number, download the JSON and reopen the reservation by its number. A wrong number shows "not found". Claude and Gemini end with the restart: kill the backend, reload, and the reservation is still there.
@@ -1265,18 +1209,18 @@ The slop solution has these and our plan didn't, so they come in as basics, not 
 
 ### Ideas
 
-| Idea | In the slop solution? | Value to the customer | Effort |
-| ---- | --------------------- | --------------------- | ------ |
-| **Never a dead end.** Every "no package" and "over budget" answer comes with options the builder has actually checked: a start date 1–3 days either side, fewer nights, another departure city, the other country. Each one rebuilds in one click. | Claude only, and only for budget | High: from "no" to a holiday they can book. Judges' unseen requests will land here often (35–45% of dates from `MAA`, `BOM` and `DEL` to Japan) | S–M once the builder exists, because it runs in milliseconds |
-| **See what changed.** After any change, a before-and-after list with ₹ per line and in total: what the traveler changed, and what the app repaired and why (for example the airport taxi re-picked for the new area, or an attraction dropped because the later flight lands after closing time). | Claude and Gemini show a warning popup; none shows the whole difference | High: the statement's own pain ("when one part changes, other parts often stop fitting"), made visible | S–M: compare two packages item by item |
-| **The night before, made obvious.** "You leave Bengaluru on Fri 9 Apr at 23:50, the evening before your holiday starts." Local times with the time zone, and "+1" where the date changes. | No | High for a family who reads "starts 10 Apr" | S |
-| **A package for families.** When children travel, prefer `family_friendly` hotels and `child_friendly` attractions and label them. One outing per full day. | No | Medium. The data already makes most choices child-friendly (52 of 56 attractions, 36 of 49 hotels), so it mostly changes labels and some hotels | S |
-| Quick request (S1), using the `aliases` | Claude, Gemini | Medium, and it shows well in a demo | S–M |
-| Booking uses up seats and rooms (S2), safe against races and repeats: two tabs fight for the last seats and one wins; a double click books once | Claude and Gemini, without the protection against repeats | Medium; a strong Q&A story for Booking engineers | M (the boilerplate has the pattern) |
-| Photos, with the credits | Optional in all three | Medium | S |
-| A short "why these cities" line on the package | No | Medium | S |
-| A calendar file (.ics) or a printable trip | No | Low to medium | S |
-| A map from `lat` and `lng` | No | Low to medium; the map tiles need internet | M |
+| Idea                                                                                                                                                                                                                                                                                              | In the slop solution?                                                   | Value to the customer                                                                                                                           | Effort                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| **Never a dead end.** Every "no package" and "over budget" answer comes with options the builder has actually checked: a start date 1–3 days either side, fewer nights, another departure city, the other country. Each one rebuilds in one click.                                                | Claude only, and only for budget                                        | High: from "no" to a holiday they can book. Judges' unseen requests will land here often (35–45% of dates from `MAA`, `BOM` and `DEL` to Japan) | S–M once the builder exists, because it runs in milliseconds |
+| **See what changed.** After any change, a before-and-after list with ₹ per line and in total: what the traveler changed, and what the app repaired and why (for example the airport taxi re-picked for the new area, or an attraction dropped because the later flight lands after closing time). | Claude and Gemini show a warning popup; none shows the whole difference | High: the statement's own pain ("when one part changes, other parts often stop fitting"), made visible                                          | S–M: compare two packages item by item                       |
+| **The night before, made obvious.** "You leave Bengaluru on Fri 9 Apr at 23:50, the evening before your holiday starts." Local times with the time zone, and "+1" where the date changes.                                                                                                         | No                                                                      | High for a family who reads "starts 10 Apr"                                                                                                     | S                                                            |
+| **A package for families.** When children travel, prefer `family_friendly` hotels and `child_friendly` attractions and label them. One outing per full day.                                                                                                                                       | No                                                                      | Medium. The data already makes most choices child-friendly (52 of 56 attractions, 36 of 49 hotels), so it mostly changes labels and some hotels | S                                                            |
+| Quick request (S1), using the `aliases`                                                                                                                                                                                                                                                           | Claude, Gemini                                                          | Medium, and it shows well in a demo                                                                                                             | S–M                                                          |
+| Booking uses up seats and rooms (S2), safe against races and repeats: two tabs fight for the last seats and one wins; a double click books once                                                                                                                                                   | Claude and Gemini, without the protection against repeats               | Medium; a strong Q&A story for Booking engineers                                                                                                | M (the boilerplate has the pattern)                          |
+| Photos, with the credits                                                                                                                                                                                                                                                                          | Optional in all three                                                   | Medium                                                                                                                                          | S                                                            |
+| A short "why these cities" line on the package                                                                                                                                                                                                                                                    | No                                                                      | Medium                                                                                                                                          | S                                                            |
+| A calendar file (.ics) or a printable trip                                                                                                                                                                                                                                                        | No                                                                      | Low to medium                                                                                                                                   | S                                                            |
+| A map from `lat` and `lng`                                                                                                                                                                                                                                                                        | No                                                                      | Low to medium; the map tiles need internet                                                                                                      | M                                                            |
 
 ### Picks
 

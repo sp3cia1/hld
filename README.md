@@ -43,7 +43,7 @@ To write.
 
 ## Our city rule
 
-To write.
+The builder tries every plan: any list of distinct cities in the country, each linked to the next, with at least 2 nights in each, adding up to the trip. Each plan is priced city by city, because a choice in one city never changes another. The cheapest plan within budget wins. On a tie, fewer cities win, then the plan that reaches its first hotel sooner, then a fixed order. Details: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## What we finished
 

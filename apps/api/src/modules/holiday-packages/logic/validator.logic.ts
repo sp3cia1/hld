@@ -6,8 +6,8 @@ import {
   type TripCheck,
   type TripProblem,
 } from '@bh/shared/trip-check';
-import { key, type Catalog } from '../catalog/catalog.logic';
-import type { Attraction, Flight, Hotel, Room, Transfer } from '../catalog/catalog.schemas';
+import { key, type Catalog } from '../../catalog/catalog.logic';
+import type { Attraction, Flight, Hotel, Room, Transfer } from '../../catalog/catalog.schemas';
 import { MIN_MINUTES_AFTER_LANDING, MIN_MINUTES_BEFORE_DEPARTURE } from './travel-rules';
 
 // The validator: checks a finished package against every travel rule in §4 of the statement.

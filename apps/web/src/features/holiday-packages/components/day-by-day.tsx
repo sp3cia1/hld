@@ -1,27 +1,35 @@
-import type { TripItem } from '@bh/shared/holiday-package';
+import type { FreeTime, TripItem } from '@bh/shared/holiday-package';
 import { Card, CardContent } from '@/components/ui/card';
 import { formatInr, formatLocalDate } from '@/lib/format';
+import { FreeTimeList } from './free-time-list';
 
-/** The package day by day (M4): each day that has something on it, items in the package's own time order. */
-export function DayByDay({ items }: { items: TripItem[] }) {
+/**
+ * The package day by day (M4): each day that has something on it, items in the package's own time order. A day the
+ * package leaves free also lists what still fits once the traveler reaches the hotel.
+ */
+export function DayByDay({ items, freeTime }: { items: TripItem[]; freeTime: FreeTime[] }) {
   return (
     <section className="space-y-4">
       <div className="space-y-1">
         <h2>Day by day</h2>
         <p className="text-sm text-muted-foreground">Every time is local to where it happens.</p>
       </div>
-      {groupByDay(items).map(({ day, dayItems }) => (
-        <Card key={day}>
-          <CardContent className="space-y-4">
-            <h3 className="text-lg font-bold">{formatLocalDate(day)}</h3>
-            <ul className="divide-y">
-              {dayItems.map((item) => (
-                <ItemRow key={item.item_id} item={item} />
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      ))}
+      {groupByDay(items).map(({ day, dayItems }) => {
+        const free = freeTime.find((f) => f.date === day);
+        return (
+          <Card key={day}>
+            <CardContent className="space-y-4">
+              <h3 className="text-lg font-bold">{formatLocalDate(day)}</h3>
+              <ul className="divide-y">
+                {dayItems.map((item) => (
+                  <ItemRow key={item.item_id} item={item} />
+                ))}
+              </ul>
+              {free && <FreeTimeList freeTime={free} />}
+            </CardContent>
+          </Card>
+        );
+      })}
     </section>
   );
 }
