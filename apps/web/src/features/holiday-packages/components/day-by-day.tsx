@@ -1,4 +1,5 @@
 import type { FreeTime, TripItem } from '@bh/shared/holiday-package';
+import { BedDouble, Car, Landmark, Plane, type LucideIcon } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -102,6 +103,7 @@ function ItemRow({
       <div className="flex gap-4">
         <p className="w-36 shrink-0 text-sm tabular-nums">{timeLabel(item)}</p>
         <div className="min-w-0 flex-1 space-y-1">
+          <KindLabel type={item.type} />
           <p className="font-semibold">{item.name}</p>
           <p className="text-sm text-muted-foreground">{details(item)}</p>
           {item.warnings.map((warning) => (
@@ -122,6 +124,24 @@ function ItemRow({
       </div>
       {children}
     </li>
+  );
+}
+
+const KINDS: Record<TripItem['type'], { label: string; Icon: LucideIcon }> = {
+  flight: { label: 'Flight', Icon: Plane },
+  transfer: { label: 'Transfer', Icon: Car },
+  hotel: { label: 'Hotel', Icon: BedDouble },
+  attraction: { label: 'Visit', Icon: Landmark },
+};
+
+/** What kind of item this is, so a day's list can be scanned at a glance. */
+function KindLabel({ type }: { type: TripItem['type'] }) {
+  const { label, Icon } = KINDS[type];
+  return (
+    <p className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">
+      <Icon aria-hidden className="size-4" />
+      {label}
+    </p>
   );
 }
 
