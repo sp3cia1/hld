@@ -35,9 +35,18 @@ export function usePackage(id: string) {
  * The rule check of a saved package. Its key sits under the package's, so refreshing the package after a change
  * (`invalidateQueries({ queryKey: packageKey(id) })`) checks it again too.
  */
+/** The rules panel's key. It sits under the package's, so refreshing the package checks it again too. */
+export function packageCheckKey(id: string) {
+  return [...packageKey(id), 'check'];
+}
+
+/**
+ * The rule check of a saved package. A change sets the new package straight into the cache without a refetch, so
+ * `useApplyChange` refreshes this key itself.
+ */
 export function usePackageCheck(id: string) {
   return useQuery({
-    queryKey: [...packageKey(id), 'check'],
+    queryKey: packageCheckKey(id),
     queryFn: () => fetchPackageCheck(id),
     retry: retryUnlessNotFound,
   });

@@ -1,7 +1,9 @@
 import type { SavedPackage } from '@bh/shared/holiday-package';
+import { soldOutDetailsSchema } from '@bh/shared/reservation';
 import { Link, useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { ApiError } from '@/lib/api-client';
 import { getErrorMessage } from '@/lib/error-messages';
 import { formatInr } from '@/lib/format';
 import { useConfirmPackage } from '../hooks';
@@ -28,6 +30,7 @@ export function ConfirmPanel({ saved }: { saved: SavedPackage }) {
   }
 
   const over = saved.budget.leftInr < 0;
+  const soldOut = soldOutReasons(confirm.error);
   return (
     <Card>
       <CardContent className="space-y-3">
@@ -43,9 +46,21 @@ export function ConfirmPanel({ saved }: { saved: SavedPackage }) {
           </p>
         )}
         {confirm.isError && (
-          <p role="alert" className="text-sm text-destructive">
-            {getErrorMessage(confirm.error)}
-          </p>
+          <div role="alert" className="space-y-1 text-sm text-destructive">
+            <p>{getErrorMessage(confirm.error)}</p>
+            {soldOut.length > 0 && (
+              <>
+                <ul className="list-disc pl-5">
+                  {soldOut.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+                <Link to="/" className="font-semibold underline">
+                  Plan it again
+                </Link>
+              </>
+            )}
+          </div>
         )}
         <Button
           disabled={confirm.isPending}
@@ -61,4 +76,11 @@ export function ConfirmPanel({ saved }: { saved: SavedPackage }) {
       </CardContent>
     </Card>
   );
+}
+
+/** What someone else booked first, when confirm is refused as SOLD_OUT (S2). Empty for any other error. */
+function soldOutReasons(error: unknown): string[] {
+  if (!(error instanceof ApiError) || error.code !== 'SOLD_OUT') return [];
+  const parsed = soldOutDetailsSchema.safeParse(error.details);
+  return parsed.success ? parsed.data.shortages.map((shortage) => shortage.message) : [];
 }

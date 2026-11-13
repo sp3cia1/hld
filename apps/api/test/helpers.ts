@@ -4,4 +4,6 @@ import { prisma } from '../src/lib/prisma';
 export async function resetDatabase() {
   await prisma.reservation.deleteMany();
   await prisma.package.deleteMany();
+  await prisma.flightStock.deleteMany();
+  await prisma.roomStock.deleteMany();
 }

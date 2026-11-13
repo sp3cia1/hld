@@ -10,6 +10,7 @@ import type {
 import { AppError } from '../../lib/app-error';
 import { getCatalog } from '../catalog/catalog.loader';
 import { toSavedPackage } from '../holiday-packages/holiday-packages.service';
+import { getBookedCatalog } from '../stock/stock.service';
 import { checkChange, checkCity, checkVisitDate, tryChange } from './change.logic';
 import { attractionChoices, flightChoices, hotelChoices } from './choices.logic';
 import { findTripWithVersion, saveTripIfUnchanged } from './package-changes.repository';
@@ -27,7 +28,7 @@ export async function getFlightChoices(
   direction: FlightDirection,
 ): Promise<FlightChoices> {
   const { trip } = await loadPackage(packageId);
-  return flightChoices(trip, direction, getCatalog());
+  return flightChoices(trip, direction, await getBookedCatalog());
 }
 
 /** The attractions the traveler can add on a day of the trip, each with when it would start and what it costs. */
@@ -57,7 +58,8 @@ export async function applyChange(packageId: string, change: ChangeRequest): Pro
       'This holiday is confirmed, so it can no longer be changed',
     );
   }
-  const catalog = getCatalog();
+  // S2: a change can only pick seats and rooms nobody has booked yet.
+  const catalog = await getBookedCatalog();
   throwIfInvalid(checkChange(trip, change, catalog));
 
   const outcome = tryChange(trip, change, catalog);

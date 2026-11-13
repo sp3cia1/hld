@@ -18,7 +18,7 @@ At startup the app reads the catalog into memory.
 
 **How the builder works, step by step:** `ARCHITECTURE.md`.
 
-**Keeping it:** Postgres stores packages and confirmed reservations (a full snapshot), so both survive a page refresh and a backend restart.
+**Keeping it:** Postgres stores packages, confirmed reservations (a full snapshot) and the seats and rooms they used up (S2), so all three survive a page refresh and a backend restart.
 
 ## Scope and order
 
@@ -153,6 +153,19 @@ None found. The profile on 13 Nov showed 0 unreadable records, 0 duplicate IDs a
     every item. The validator runs first, so a package that breaks a rule is refused (422 `PACKAGE_INVALID`) and never
     downloads. A "Download as JSON" button on the package page and the reservation page saves it as
     `holiday-<reservation number>.json`, or `holiday-<package id>.json` before confirm.
+- **Seats and rooms run out (S2, `modules/stock/`):** confirming uses up what the trip needs in our own store:
+  `FlightStock` (seats left per flight) and `RoomStock` (rooms left per room type per night). The data files never
+  change; a row starts from the catalog's `seats_left` or `rooms_left` the first time a booking needs it.
+  - **One step:** the reservation is saved and the stock taken in one transaction. Each take is a conditional
+    decrement ("only if at least this many are left"), so two bookings racing for the last seats can't both win.
+    Rows are taken in a fixed order, so two bookings never wait on each other.
+  - **Refused:** a booking that needs seats or rooms already taken is 409 `SOLD_OUT` with the reasons ("AV 520
+    doesn't have 3 seats left"). Nothing is taken and no reservation is saved. The confirm panel lists the reasons
+    with "Plan it again".
+  - **Everything else sees it:** building (all three packages), the change choices, a change and the rules panel
+    use the catalog as bookings left it (`getBookedCatalog`). A full flight or hotel night is never offered, and a
+    saved package whose flight someone else filled shows the broken rule before confirm. A confirmed package is
+    checked against the catalog as is, since its own seats are already in the stock.
 - **Validator (`validator.logic.ts`):** `validateTrip(trip, catalog)` returns every broken §4 rule as
   `{ rule, itemId, message }`, and `checkTrip` adds a pass/fail line per rule for the rules panel. The 12 rules and
   their titles are in `packages/shared/src/trip-check.ts`. Written from the statement, not the builder, and imports

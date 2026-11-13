@@ -11,6 +11,7 @@ import { AppError } from '../../lib/app-error';
 import { runInTransaction } from '../../lib/transaction';
 import { getCatalog } from '../catalog/catalog.loader';
 import { findReservationByPackage } from '../reservations/reservations.repository';
+import { getBookedCatalog } from '../stock/stock.service';
 import {
   findPackage,
   findPackageRequest,
@@ -29,6 +30,10 @@ import { checkTrip, validateTrip } from './logic/validator.logic';
  * Checks the request against the data, builds the package, and saves it unless none is possible. A package comes
  * back with the free time on the days it leaves open.
  */
+/**
+ * Checks the request against the data, builds the package, and saves it unless none is possible. A package comes
+ * back with the free time on the days it leaves open.
+ */
 export async function createPackage(request: HolidayRequest): Promise<BuildResult> {
   const catalog = getCatalog();
 
@@ -37,7 +42,8 @@ export async function createPackage(request: HolidayRequest): Promise<BuildResul
     throw new AppError('VALIDATION_ERROR', 400, 'Some fields are invalid', { fields });
   }
 
-  return saveBuild(request, buildPackage(request, catalog));
+  // S2: seats and rooms that confirmed reservations took are gone, so every package offered only uses what is free.
+  return saveBuild(request, buildPackage(request, await getBookedCatalog()));
 }
 
 /** Every valid city plan for a package's request, with its cheapest total or why it can't be built (G3). */
@@ -46,8 +52,9 @@ export async function getCityPlans(id: string): Promise<CityPlanChoices> {
   const request = await findPackageRequest(id);
   if (!saved || !request) throw new AppError('NOT_FOUND', 404, 'No package has this id');
   const current = planOf(saved.trip);
+  // S2: priced on what is still free, like a new build.
   return {
-    choices: planChoices(request, getCatalog()).map((choice) => ({
+    choices: planChoices(request, await getBookedCatalog()).map((choice) => ({
       ...choice,
       current: samePlan(choice.plan, current),
     })),
@@ -56,12 +63,13 @@ export async function getCityPlans(id: string): Promise<CityPlanChoices> {
 
 /**
  * Builds the three packages again for the city plan the traveler chose (G3), from the package's own request, and saves
- * them as new packages. The package it starts from stays as it was. A plan the rules don't allow is refused.
+ * them as new packages. The package it starts from stays as it was. A plan the rules don't allow is refused. Like a new
+ * build, it only uses seats and rooms that are still free (S2).
  */
 export async function rebuildPackage(id: string, cityPlan: CityPlan): Promise<BuildResult> {
   const request = await findPackageRequest(id);
   if (!request) throw new AppError('NOT_FOUND', 404, 'No package has this id');
-  const catalog = getCatalog();
+  const catalog = await getBookedCatalog();
   if (!planChoices(request, catalog).some((choice) => samePlan(choice.plan, cityPlan))) {
     throw new AppError('VALIDATION_ERROR', 400, 'Some fields are invalid', {
       fields: [{ path: 'cityPlan', message: 'Choose a city plan from the list' }],
@@ -108,7 +116,9 @@ export async function getPackage(id: string): Promise<SavedPackage> {
 export async function getPackageCheck(id: string): Promise<TripCheck> {
   const saved = await findPackage(id);
   if (!saved) throw new AppError('NOT_FOUND', 404, 'No package has this id');
-  return checkTrip(saved.trip, getCatalog());
+  // S2: before confirm, checked against what is still free, so a flight someone else filled shows as a broken rule.
+  // A confirmed package's own seats and rooms are in the booked stock, so it is checked against the catalog as is.
+  return checkTrip(saved.trip, saved.reference ? getCatalog() : await getBookedCatalog());
 }
 
 /**
