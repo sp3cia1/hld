@@ -8,6 +8,7 @@ import { ConfirmPanel } from '@/features/reservations/components/confirm-panel';
 import { ApiError } from '@/lib/api-client';
 import { formatInr } from '@/lib/format';
 import { BudgetSummary } from '../components/budget-summary';
+import { CityPlanBar } from '../components/city-plan-bar';
 import { DayByDay } from '../components/day-by-day';
 import { ExportButton } from '../components/export-button';
 import { PackageOptions } from '../components/package-options';
@@ -57,6 +58,7 @@ export function PackagePage() {
   return (
     <div className="space-y-8">
       <TripHeading title={`Your holiday in ${trip.country}`} trip={trip} />
+      <CityPlanBar packageId={packageId} trip={trip} canChange={reference === null} />
       {options.length > 1 && <PackageOptions options={options} current={packageId} />}
       {status === 'OVER_BUDGET' && (
         <p role="status" className="rounded-xl bg-caution p-4 text-caution-foreground">

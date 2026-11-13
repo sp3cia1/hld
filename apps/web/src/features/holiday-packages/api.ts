@@ -1,6 +1,8 @@
 import {
   buildResponseSchema,
+  cityPlanChoicesResponseSchema,
   packageResponseSchema,
+  type CityPlan,
   type HolidayRequest,
 } from '@bh/shared/holiday-package';
 import { optionsResponseSchema } from '@bh/shared/options';
@@ -38,5 +40,19 @@ export function readQuickRequest(text: string) {
     schema: quickRequestResponseSchema,
     method: 'POST',
     body: { text },
+  });
+}
+
+export function fetchCityPlans(id: string) {
+  return apiRequest(`/packages/${encodeURIComponent(id)}/city-plans`, {
+    schema: cityPlanChoicesResponseSchema,
+  });
+}
+
+export function rebuildPackage(id: string, cityPlan: CityPlan) {
+  return apiRequest(`/packages/${encodeURIComponent(id)}/rebuild`, {
+    schema: buildResponseSchema,
+    method: 'POST',
+    body: { cityPlan },
   });
 }

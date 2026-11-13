@@ -1,3 +1,6 @@
+import type { Trip } from '@bh/shared/holiday-package';
+import { daysBetween } from './time.logic';
+
 /** One city of a plan and the nights spent there. */
 export type CityStop = { city: string; nights: number };
 /** The cities of a trip in travel order. */
@@ -34,4 +37,19 @@ export function cityPlans(
   };
   extend([], nights);
   return plans;
+}
+
+/** True when two plans visit the same cities, in the same order, for the same nights. */
+export function samePlan(a: CityPlan, b: CityPlan): boolean {
+  return (
+    a.length === b.length &&
+    a.every((stop, i) => stop.city === b[i]!.city && stop.nights === b[i]!.nights)
+  );
+}
+
+/** The city plan of a trip, read from its hotels in travel order. */
+export function planOf(trip: Omit<Trip, 'trip_id'>): CityPlan {
+  return trip.items
+    .filter((item) => item.type === 'hotel')
+    .map((item) => ({ city: item.city, nights: daysBetween(item.start, item.end ?? item.start) }));
 }

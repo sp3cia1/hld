@@ -1,7 +1,8 @@
 import type { HolidayRequest } from '@bh/shared/holiday-package';
 import { describe, expect, it } from 'vitest';
 import { getCatalog } from '../../catalog/catalog.loader';
-import { buildPackage } from './builder.logic';
+import { buildPackage, planChoices } from './builder.logic';
+import { planOf } from './plans.logic';
 import { MENON_EXAMPLE_TRIP } from './menon-example';
 import { summaryOf } from './summary.logic';
 import { validateTrip } from './validator.logic';
@@ -179,6 +180,51 @@ describe('the three packages (G4)', () => {
         expect(option.trip.total_inr).toBeLessThanOrEqual(request.budgetInr);
         expect(validateTrip(option.trip, catalog)).toEqual([]);
       }
+    }
+  });
+});
+
+describe('changing the cities (G3)', () => {
+  const tokyoOsaka = [
+    { city: 'Tokyo', nights: 2 },
+    { city: 'Osaka', nights: 4 },
+  ];
+
+  it('lists every valid plan for Menon with its cheapest total', () => {
+    const choices = planChoices(menon, catalog);
+
+    expect(choices).toHaveLength(27);
+    expect(choices.every((choice) => choice.reason === null)).toBe(true);
+    expect(
+      choices.find((choice) => choice.plan.length === 1 && choice.plan[0]!.city === 'Tokyo'),
+    ).toMatchObject({ totalInr: 219324 });
+    expect(
+      choices.find((choice) => JSON.stringify(choice.plan) === JSON.stringify(tokyoOsaka)),
+    ).toMatchObject({
+      totalInr: 230440,
+    });
+  });
+
+  it("says why a plan can't be built, about its own cities", () => {
+    // Delhi, 1 Apr, 5 nights: the only flight in lands at HND, so no plan can start in Osaka.
+    const choices = planChoices(
+      { ...menon, departureAirport: 'DEL', startDate: '2027-04-01', nights: 5 },
+      catalog,
+    );
+
+    expect(choices.find((choice) => choice.plan[0]!.city === 'Osaka')?.reason).toBe(
+      'No flight from Delhi with 3 seats lands near Osaka on 1 Apr 2027.',
+    );
+  });
+
+  it('builds the three packages again for the chosen plan only', () => {
+    const outcome = buildPackage(menon, catalog, tokyoOsaka);
+    if (outcome.status === 'NO_PACKAGE') throw new Error(outcome.reason.message);
+
+    expect(outcome.trip.total_inr).toBe(230440);
+    for (const option of outcome.options) {
+      expect(planOf(option.trip)).toEqual(tokyoOsaka);
+      expect(validateTrip(option.trip, catalog)).toEqual([]);
     }
   });
 });

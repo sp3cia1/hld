@@ -8,7 +8,7 @@ import { key, type Catalog } from '../../catalog/catalog.logic';
 import type { Attraction, Flight, Hotel, Room, Transfer } from '../../catalog/catalog.schemas';
 import { cheapestTransferFromAirport, cheapestTransferToAirport } from './airport-transfers.logic';
 import { assignCheapest, earliestVisit } from './attractions.logic';
-import { cityPlans, type CityPlan } from './plans.logic';
+import { cityPlans, samePlan, type CityPlan } from './plans.logic';
 import {
   attractionPrice,
   flightPrice,
@@ -92,14 +92,17 @@ type Built = { plan: CityPlan; package: PlanPackage };
  */
 type Pinned = { arrival?: Flight; departure?: Flight; moves?: Transfer[]; stars?: number[] };
 
-export function buildPackage(request: HolidayRequest, catalog: Catalog): BuildOutcome {
+/**
+ * `only` keeps the search to one city plan (G3, the traveler's choice of cities); the three packages are then the
+ * cheapest, fastest and best rated for that plan.
+ */
+export function buildPackage(
+  request: HolidayRequest,
+  catalog: Catalog,
+  only?: CityPlan,
+): BuildOutcome {
   const ctx = contextFor(request, catalog);
-  const plans = cityPlans(
-    ctx.country.cities,
-    request.nights,
-    catalog.destinations.rules.min_nights_per_city,
-    (from, to) => catalog.intercityTransfers.has(key(from, to)),
-  );
+  const plans = validPlans(ctx).filter((plan) => !only || samePlan(plan, only));
   const results = plans.map((plan) => buildForPlan(plan, ctx));
   const built = plans.flatMap((plan, i): Built[] => {
     const result = results[i]!;
@@ -181,6 +184,47 @@ function bestRated(built: Built[], cheapest: PlanPackage, ctx: Context): PlanPac
     }
   }
   return winner;
+}
+
+/** A city plan the traveler can choose (G3): its cheapest total, or why it can't be built. */
+export type PlanChoice = { plan: CityPlan; totalInr: number | null; reason: string | null };
+
+/** Every valid city plan for the request, each with its cheapest total or the reason it can't be built (G3). */
+export function planChoices(request: HolidayRequest, catalog: Catalog): PlanChoice[] {
+  const ctx = contextFor(request, catalog);
+  return validPlans(ctx).map((plan) => {
+    const result = buildForPlan(plan, ctx);
+    return 'package' in result
+      ? { plan, totalInr: result.package.total, reason: null }
+      : { plan, totalInr: null, reason: planReason(result.failedAt, result.city, ctx) };
+  });
+}
+
+/** Why one city plan can't be built, about that plan's own cities, in the traveler's words. */
+function planReason(stage: Stage, city: string, ctx: Context): string {
+  const seats = `${ctx.travelers} ${ctx.travelers === 1 ? 'seat' : 'seats'}`;
+  switch (stage) {
+    case 'arrival':
+      return `No flight from ${ctx.departureCity} with ${seats} lands near ${city} on ${formatDate(ctx.start)}.`;
+    case 'return':
+      return `No flight home with ${seats} leaves near ${city} on ${formatDate(ctx.lastDay)}.`;
+    case 'room':
+      return `No hotel in ${city} has rooms for ${partyText(ctx.party)} on those nights.`;
+    case 'transfer':
+      return `No airport transfer in ${city} runs at the flights' times.`;
+    case 'attractions':
+      return `Not enough different attractions are open in ${city} to fill every full day.`;
+  }
+}
+
+/** The plans the rules allow (§4): cities from the country, each linked to the next, enough nights in each. */
+function validPlans(ctx: Context): CityPlan[] {
+  return cityPlans(
+    ctx.country.cities,
+    ctx.request.nights,
+    ctx.catalog.destinations.rules.min_nights_per_city,
+    (from, to) => ctx.catalog.intercityTransfers.has(key(from, to)),
+  );
 }
 
 /** Writes each package once: a package that earns two labels is one option with both. */
