@@ -1,6 +1,6 @@
 import type { HolidayRequest, NoPackageReason, Trip, TripItem } from '@bh/shared/holiday-package';
-import { key, type Catalog } from '../catalog/catalog.logic';
-import type { Attraction, Flight, Hotel, Room, Transfer } from '../catalog/catalog.schemas';
+import { key, type Catalog } from '../../catalog/catalog.logic';
+import type { Attraction, Flight, Hotel, Room, Transfer } from '../../catalog/catalog.schemas';
 import { assignCheapest } from './attractions.logic';
 import {
   attractionPrice,

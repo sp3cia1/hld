@@ -1,4 +1,4 @@
-import type { Attraction, Flight, Room, Transfer } from '../catalog/catalog.schemas';
+import type { Attraction, Flight, Room, Transfer } from '../../catalog/catalog.schemas';
 
 // The price formulas in §4. All whole rupees.
 

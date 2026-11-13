@@ -2,9 +2,9 @@ import type { BuildResult, HolidayRequest, Trip } from '@bh/shared/holiday-packa
 import { AppError } from '../../lib/app-error';
 import { runInTransaction } from '../../lib/transaction';
 import { getCatalog } from '../catalog/catalog.loader';
-import { buildPackage } from './builder.logic';
+import { buildPackage } from './logic/builder.logic';
 import { insertPackage, saveTrip } from './holiday-packages.repository';
-import { checkRequest } from './request.logic';
+import { checkRequest } from './logic/request.logic';
 
 /** Checks the request against the data, builds the package, and saves it unless none is possible. */
 export async function createPackage(request: HolidayRequest): Promise<BuildResult> {

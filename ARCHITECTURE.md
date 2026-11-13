@@ -35,7 +35,7 @@ v1 builds packages that stay in one city. v2 adds plans with several cities (see
 | Full days      | Every day after the arrival day and before the last day         | 11–15 Apr            |
 | Travelers `T`  | Adults + children. Every child needs a seat                     | 3                    |
 
-The numbers in the travel rules (60 and 180 minutes, the 09:00 start of a full day) live in `apps/api/src/modules/holiday-packages/travel-rules.ts`. The builder is `builder.logic.ts` next to it.
+The numbers in the travel rules (60 and 180 minutes, the 09:00 start of a full day) live in `apps/api/src/modules/holiday-packages/logic/travel-rules.ts`. The builder is `builder.logic.ts` next to it, both in `holiday-packages/logic/`.
 
 ### Step 1: check the request
 
@@ -90,7 +90,7 @@ In v1, each city of the country is one plan, with all the nights. One city alway
   - None on the arrival day (optional, left empty) and none on the last day (not allowed).
 - **How they're picked:**
   - Each full day needs a different attraction, at the lowest total price. That's the **assignment problem**: days × attractions, the cost is the price, and the pair is forbidden where the attraction can't go that day.
-  - It's solved exactly with the **Hungarian algorithm** (`attractions.logic.ts`), in O(days² × attractions). A city has at most about 15 attractions, so that's instant.
+  - It's solved exactly with the **Hungarian algorithm** (`logic/attractions.logic.ts`), in O(days² × attractions). A city has at most about 15 attractions, so that's instant.
   - Picking day by day fails. If day 1 takes the free attraction that day 2 also needs, day 2 gets nothing or pays more. In tests on the real data, a day-by-day pick overpaid by up to ₹1,120: on Monday 12 Apr most free attractions are closed.
   - On equal price, the attraction listed first in the catalog wins.
 - **No match:** if some full day can't get an attraction, the city fails.

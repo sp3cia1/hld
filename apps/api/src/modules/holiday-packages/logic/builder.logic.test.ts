@@ -1,6 +1,6 @@
 import type { HolidayRequest } from '@bh/shared/holiday-package';
 import { describe, expect, it } from 'vitest';
-import { getCatalog } from '../catalog/catalog.loader';
+import { getCatalog } from '../../catalog/catalog.loader';
 import { buildPackage } from './builder.logic';
 import { MENON_EXAMPLE_TRIP } from './menon-example';
 

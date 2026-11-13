@@ -46,6 +46,7 @@ from there. Register the router with one line in `apps/api/src/routes.ts`. Put z
 | logic      | pure functions: pricing, refunds, ranking, routing                      | I/O, DB, HTTP, reading the clock (`now` is a parameter)   |
 
 Services load data, call logic, run the transaction. Logic decides. Put anything computation-heavy in `*.logic.ts` with a unit test.
+A module with more than a couple of logic files puts them in `<module>/logic/`, next to its routes, controller, service and repository. Flat modules stay flat.
 Services run transactions with `runInTransaction` from `lib/transaction.ts` and pass the `tx` to repository functions.
 
 ## Conventions

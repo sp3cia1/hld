@@ -106,7 +106,7 @@ None found. The profile on 13 Nov showed 0 unreadable records, 0 duplicate IDs a
 
 Numbers and checks that show it works.
 
-- **Menon:** the builder returns exactly the hand-checked package in `menon-example.ts`: Tokyo, ₹2,19,324 of ₹3,50,000. A unit test checks it.
+- **Menon:** the builder returns exactly the hand-checked package in `logic/menon-example.ts`: Tokyo, ₹2,19,324 of ₹3,50,000. A unit test checks it.
 - **Independent rule check (13 Nov):** 2,221 packages from the builder, checked against every §4 rule by a separate script written from the rules text. **0 problems.** The packages covered every departure city, both countries, every start date and trip length, and 4 kinds of party: 1 adult; 2 adults + 1 child; 4 adults + 3 children with a 17-year-old; 3 adults + an infant.
 - **Attraction assignment:** the Hungarian algorithm gives the same optimum as trying every assignment, on 3,000 random cases.
 - **Still to fill:** the rehearsed judge requests.

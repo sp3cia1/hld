@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Attraction, Transfer } from '../catalog/catalog.schemas';
+import type { Attraction, Transfer } from '../../catalog/catalog.schemas';
 import { attractionPrice, transferPrice, transferQuantity } from './pricing.logic';
 
 const inr = (amount: number) => ({ amount, currency: 'INR' as const });
