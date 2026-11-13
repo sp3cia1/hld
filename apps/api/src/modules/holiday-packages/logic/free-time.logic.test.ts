@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { getCatalog } from '../../catalog/catalog.loader';
+import { buildPackage } from './builder.logic';
 import { freeTimeIn } from './free-time.logic';
 import { MENON_EXAMPLE_TRIP } from './menon-example';
 
 const catalog = getCatalog();
 const menon = MENON_EXAMPLE_TRIP;
+const delhi = { country: 'JP', adults: 2, childAges: [6], budgetInr: 350000 };
 const [, arrivalTransfer, , firstVisit] = menon.items;
 
 describe('freeTimeIn', () => {
@@ -89,6 +91,20 @@ describe('freeTimeIn', () => {
       'Shinsekai',
       'Kuromon Ichiba Market',
       'Sumiyoshi Taisha',
+    ]);
+  });
+
+  it('lists the free time on both optional days of a real two-city package', () => {
+    // Delhi, 1 Apr, 5 nights builds Tokyo 2 nights then Osaka 3, with the Shinkansen at 10:00 on 3 Apr.
+    const request = { ...delhi, departureAirport: 'DEL', startDate: '2027-04-01', nights: 5 };
+    const outcome = buildPackage(request, catalog);
+    if (outcome.status === 'NO_PACKAGE') throw new Error(outcome.reason.message);
+
+    const free = freeTimeIn(outcome.trip, catalog);
+
+    expect(free.map((f) => [f.date, f.city, f.freeFrom, f.stationTaxiInr])).toEqual([
+      ['2027-04-01', 'Tokyo', '2027-04-01T09:05', null],
+      ['2027-04-03', 'Osaka', '2027-04-03T12:50', 1232],
     ]);
   });
 });

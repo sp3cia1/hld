@@ -2,6 +2,7 @@ import type { HolidayRequest, NoPackageReason, Trip, TripItem } from '@bh/shared
 import { key, type Catalog } from '../../catalog/catalog.logic';
 import type { Attraction, Flight, Hotel, Room, Transfer } from '../../catalog/catalog.schemas';
 import { assignCheapest, earliestVisit } from './attractions.logic';
+import { cityPlans, type CityPlan } from './plans.logic';
 import {
   attractionPrice,
   flightPrice,
@@ -14,6 +15,7 @@ import {
 import { roomsNeeded } from './rooms.logic';
 import {
   addDays,
+  departureAtOrAfter,
   earliestInWindow,
   formatDate,
   latestInWindow,
@@ -21,12 +23,13 @@ import {
   minutesOf,
 } from './time.logic';
 import {
+  HOPS_LEAVE_AT,
   MIN_MINUTES_AFTER_LANDING,
   MIN_MINUTES_BEFORE_DEPARTURE,
   VISITS_START_AT,
 } from './travel-rules';
 
-// Builds a package for a request that passed `checkRequest`. v1: every plan stays in one city.
+// Builds a package for a request that passed `checkRequest`: it prices every city plan and keeps the cheapest.
 // ARCHITECTURE.md ("Building a package") explains each step.
 
 export type PlannedTrip = Omit<Trip, 'trip_id'>;
@@ -35,7 +38,7 @@ export type BuildOutcome =
   | { status: 'OK' | 'OVER_BUDGET'; trip: PlannedTrip }
   | { status: 'NO_PACKAGE'; reason: NoPackageReason };
 
-/** The steps a city can fail at, in the order they are tried. The furthest one explains a NO_PACKAGE. */
+/** The steps a plan can fail at, in the order they are tried. The furthest one explains a NO_PACKAGE. */
 const STAGES = ['arrival', 'return', 'room', 'transfer', 'attractions'] as const;
 type Stage = (typeof STAGES)[number];
 
@@ -48,36 +51,53 @@ type Context = {
   country: { name: string; cities: string[] };
   start: string;
   lastDay: string;
-  /** The dates the traveler sleeps in a hotel: the start date up to the day before the last day. */
-  nights: string[];
-  /** Every day after the arrival day and before the last day. */
-  fullDays: string[];
 };
+
+/** One city of a plan: the dates the traveler sleeps there, and its full days (every one of those but the first). */
+type Segment = { city: string; nights: string[]; fullDays: string[] };
 
 type Stay = { hotel: Hotel; room: Room; rooms: number; price: number };
 /** A flight and its airport transfer. `at` is the pickup (arriving) or the time to leave the hotel (leaving). */
 type Leg = { flight: Flight; transfer: Transfer; at: number; price: number };
+/** The train, bus or taxi to the next city, leaving at `at` on `day`, the day the traveler moves. */
+type Hop = { transfer: Transfer; day: string; at: number; price: number };
 type Visit = { day: string; attraction: Attraction; start: number; price: number };
-type CityPackage = {
-  city: string;
+/** One city of a package: its hotel, plus the arrival leg in the first city and the return leg in the last. */
+type Stop = {
+  segment: Segment;
   stay: Stay;
-  arrival: Leg;
-  departure: Leg;
-  visits: Visit[];
-  total: number;
+  arrival: Leg | null;
+  departure: Leg | null;
+  cost: number;
 };
-type CityResult = { city: string; package: CityPackage } | { city: string; failedAt: Stage };
+type PlanPackage = {
+  stops: Stop[];
+  /** The visits of each stop, in the same order. */
+  visits: Visit[][];
+  /** The moves between neighbouring stops. */
+  hops: Hop[];
+  total: number;
+  /** When the traveler reaches the first hotel, in minutes after midnight on the start date. */
+  reachesFirstHotel: number;
+};
+type PlanResult = { package: PlanPackage } | { failedAt: Stage; city: string };
 
 export function buildPackage(request: HolidayRequest, catalog: Catalog): BuildOutcome {
   const ctx = contextFor(request, catalog);
-  const results = ctx.country.cities.map((city) => buildForCity(city, ctx));
+  const plans = cityPlans(
+    ctx.country.cities,
+    request.nights,
+    catalog.destinations.rules.min_nights_per_city,
+    (from, to) => catalog.intercityTransfers.has(key(from, to)),
+  );
+  const results = plans.map((plan) => buildForPlan(plan, ctx));
   const packages = results.flatMap((result) => ('package' in result ? [result.package] : []));
   if (packages.length === 0) return { status: 'NO_PACKAGE', reason: explain(results, ctx) };
 
-  const withinBudget = packages.filter((p) => p.total <= request.budgetInr);
-  const chosen = cheapest(withinBudget.length > 0 ? withinBudget : packages);
+  // The cheapest package is within budget whenever any package is.
+  const chosen = best(packages);
   return {
-    status: withinBudget.length > 0 ? 'OK' : 'OVER_BUDGET',
+    status: chosen.total <= request.budgetInr ? 'OK' : 'OVER_BUDGET',
     trip: writeTrip(chosen, ctx),
   };
 }
@@ -100,78 +120,131 @@ function contextFor(request: HolidayRequest, catalog: Catalog): Context {
     country: { name: country.name, cities: country.cities.map((c) => c.name) },
     start: request.startDate,
     lastDay: addDays(request.startDate, request.nights),
-    nights: Array.from({ length: request.nights }, (_, i) => addDays(request.startDate, i)),
-    fullDays: Array.from({ length: request.nights - 1 }, (_, i) =>
-      addDays(request.startDate, i + 1),
-    ),
   };
 }
 
-/** The cheapest valid package that spends every night in `city`, or the step where that is impossible. */
-function buildForCity(city: string, ctx: Context): CityResult {
-  const { catalog, request, travelers } = ctx;
-  const airports = (catalog.airportsServingCity.get(city) ?? []).map((a) => a.code);
+/** The plan as dates: each city's nights follow the previous city's, from the start date. */
+function segmentsOf(plan: CityPlan, start: string): Segment[] {
+  let firstNight = 0;
+  return plan.map(({ city, nights }) => {
+    const dates = Array.from({ length: nights }, (_, i) => addDays(start, firstNight + i));
+    firstNight += nights;
+    return { city, nights: dates, fullDays: dates.slice(1) };
+  });
+}
 
-  const arrivals = airports
-    .flatMap(
-      (code) => catalog.flightsByArrival.get(key(request.departureAirport, code, ctx.start)) ?? [],
-    )
-    .filter((f) => f.seats_left >= travelers);
-  if (arrivals.length === 0) return { city, failedAt: 'arrival' };
+/** The cheapest valid package for one city plan, or the step and the city where the plan is impossible. */
+function buildForPlan(plan: CityPlan, ctx: Context): PlanResult {
+  const segments = segmentsOf(plan, ctx.start);
+  const first = segments[0]!;
+  const last = segments.at(-1)!;
 
-  const returns = airports
-    .flatMap(
-      (code) =>
-        catalog.flightsByDeparture.get(key(code, request.departureAirport, ctx.lastDay)) ?? [],
-    )
-    .filter((f) => f.seats_left >= travelers);
-  if (returns.length === 0) return { city, failedAt: 'return' };
+  const arrivals = arrivalsInto(first.city, ctx);
+  if (arrivals.length === 0) return { failedAt: 'arrival', city: first.city };
+  const returns = returnsFrom(last.city, ctx);
+  if (returns.length === 0) return { failedAt: 'return', city: last.city };
 
-  const stays = staysIn(city, ctx);
-  if (stays.length === 0) return { city, failedAt: 'room' };
-
-  // One city has one hotel, so the arrival half and the return half do not affect each other: the cheapest of
-  // each, per room option, gives the cheapest whole.
-  let best: { stay: Stay; arrival: Leg; departure: Leg; cost: number } | undefined;
-  for (const stay of stays) {
-    const arrival = cheapestArrival(arrivals, stay, city, ctx);
-    const departure = arrival && cheapestDeparture(returns, stay, city, ctx);
-    if (!arrival || !departure) continue;
-    const cost = stay.price + arrival.price + departure.price;
-    if (!best || cost < best.cost) best = { stay, arrival, departure, cost };
+  // No choice in one city changes the choices in another: a hotel matters only to its own city, and, in the first and
+  // last city, to the airport transfer that must serve its area. Trains and buses run station to station. So the
+  // cheapest stop in each city, added up, is the cheapest package for the plan, with no combinations to try.
+  const stops: Stop[] = [];
+  for (const segment of segments) {
+    const stays = staysIn(segment, ctx);
+    if (stays.length === 0) return { failedAt: 'room', city: segment.city };
+    const stop = cheapestStop(
+      segment,
+      stays,
+      segment === first ? arrivals : null,
+      segment === last ? returns : null,
+      ctx,
+    );
+    if (!stop) return { failedAt: 'transfer', city: segment.city };
+    stops.push(stop);
   }
-  if (!best) return { city, failedAt: 'transfer' };
 
-  const visits = planVisits(city, ctx);
-  if (!visits) return { city, failedAt: 'attractions' };
+  const visits: Visit[][] = [];
+  for (const segment of segments) {
+    const planned = planVisits(segment, ctx);
+    if (!planned) return { failedAt: 'attractions', city: segment.city };
+    visits.push(planned);
+  }
 
-  const total = best.cost + visits.reduce((sum, visit) => sum + visit.price, 0);
+  const hops = segments.slice(1).map((segment, i) => cheapestHop(segments[i]!.city, segment, ctx));
+  const total =
+    sum(stops.map((stop) => stop.cost)) +
+    sum(hops.map((hop) => hop.price)) +
+    sum(visits.flat().map((visit) => visit.price));
+  const arrival = stops[0]!.arrival!;
   return {
-    city,
     package: {
-      city,
-      stay: best.stay,
-      arrival: best.arrival,
-      departure: best.departure,
+      stops,
       visits,
+      hops,
       total,
+      reachesFirstHotel: arrival.at + arrival.transfer.duration_minutes,
     },
   };
 }
 
-/** Every room type in the city that fits the party with enough rooms free on every night. */
-function staysIn(city: string, ctx: Context): Stay[] {
+/** Flights from home that land on the start date at an airport serving `city`, with a seat for everyone. */
+function arrivalsInto(city: string, ctx: Context): Flight[] {
+  const { catalog, request } = ctx;
+  return (catalog.airportsServingCity.get(city) ?? [])
+    .flatMap(
+      (airport) =>
+        catalog.flightsByArrival.get(key(request.departureAirport, airport.code, ctx.start)) ?? [],
+    )
+    .filter((f) => f.seats_left >= ctx.travelers);
+}
+
+/** Flights home that leave on the last day from an airport serving `city`, with a seat for everyone. */
+function returnsFrom(city: string, ctx: Context): Flight[] {
+  const { catalog, request } = ctx;
+  return (catalog.airportsServingCity.get(city) ?? [])
+    .flatMap(
+      (airport) =>
+        catalog.flightsByDeparture.get(key(airport.code, request.departureAirport, ctx.lastDay)) ??
+        [],
+    )
+    .filter((f) => f.seats_left >= ctx.travelers);
+}
+
+/**
+ * The cheapest stay in one city, together with the flight and airport transfer at each end of the trip that the city
+ * touches: the first city takes the arrival, the last city the return, a one-city plan both. Null when no stay has an
+ * airport transfer that runs at the flights' times.
+ */
+function cheapestStop(
+  segment: Segment,
+  stays: Stay[],
+  arrivals: Flight[] | null,
+  returns: Flight[] | null,
+  ctx: Context,
+): Stop | null {
+  let best: Stop | null = null;
+  for (const stay of stays) {
+    const arrival = arrivals ? cheapestArrival(arrivals, stay, segment.city, ctx) : null;
+    const departure = returns ? cheapestDeparture(returns, stay, segment.city, ctx) : null;
+    if (arrival === undefined || departure === undefined) continue;
+    const cost = stay.price + (arrival?.price ?? 0) + (departure?.price ?? 0);
+    if (!best || cost < best.cost) best = { segment, stay, arrival, departure, cost };
+  }
+  return best;
+}
+
+/** Every room type in the segment's city that fits the party, with enough rooms free on each of its nights. */
+function staysIn(segment: Segment, ctx: Context): Stay[] {
   const { catalog } = ctx;
   const stays: Stay[] = [];
-  for (const hotel of catalog.hotelsByCity.get(city) ?? []) {
+  for (const hotel of catalog.hotelsByCity.get(segment.city) ?? []) {
     for (const room of catalog.roomsByHotel.get(hotel.hotel_id) ?? []) {
       const rooms = roomsNeeded(room, ctx.party);
       if (rooms === null) continue;
-      const free = ctx.nights.every(
+      const free = segment.nights.every(
         (night) => (catalog.roomsLeft.get(key(room.room_id, night)) ?? 0) >= rooms,
       );
       if (free)
-        stays.push({ hotel, room, rooms, price: hotelPrice(room, rooms, ctx.nights.length) });
+        stays.push({ hotel, room, rooms, price: hotelPrice(room, rooms, segment.nights.length) });
     }
   }
   return stays;
@@ -239,12 +312,12 @@ function cheapestDeparture(
 }
 
 /** One different attraction on every full day at the lowest total price, or null when the city cannot fill them all. */
-function planVisits(city: string, ctx: Context): Visit[] | null {
-  const attractions = ctx.catalog.attractionsByCity.get(city) ?? [];
+function planVisits(segment: Segment, ctx: Context): Visit[] | null {
+  const attractions = ctx.catalog.attractionsByCity.get(segment.city) ?? [];
   const startOfDay = minutesOf(VISITS_START_AT);
 
   const options = new Map<string, Visit[]>();
-  for (const day of ctx.fullDays) {
+  for (const day of segment.fullDays) {
     const fits = attractions.flatMap((attraction): Visit[] => {
       const visit = earliestVisit(attraction, day, startOfDay);
       const price = attractionPrice(attraction, ctx.party);
@@ -260,28 +333,77 @@ function planVisits(city: string, ctx: Context): Visit[] | null {
       visits.map((v) => ({ id: v.attraction.attraction_id, cost: v.price })),
     ]),
   );
-  const assignment = assignCheapest(ctx.fullDays, choices);
+  const assignment = assignCheapest(segment.fullDays, choices);
   if (!assignment) return null;
-  return ctx.fullDays.map((day) =>
+  return segment.fullDays.map((day) =>
     options.get(day)!.find((visit) => visit.attraction.attraction_id === assignment.get(day))!,
   );
 }
 
-/** The first package wins a tie, so results repeat: cities keep the order of destinations.json. */
-function cheapest(packages: CityPackage[]): CityPackage {
-  return packages.reduce((best, p) => (p.total < best.total ? p : best));
+/**
+ * The cheapest train, bus or taxi from `from` to the segment's city, on the segment's first day. On equal price, the
+ * one that arrives sooner.
+ */
+function cheapestHop(from: string, segment: Segment, ctx: Context): Hop {
+  const day = segment.nights[0]!;
+  const preferred = minutesOf(HOPS_LEAVE_AT);
+  let best: Hop | undefined;
+  for (const transfer of ctx.catalog.intercityTransfers.get(key(from, segment.city)) ?? []) {
+    const at = departureAtOrAfter(
+      preferred,
+      transfer.service_from,
+      transfer.service_until,
+      transfer.frequency_minutes ?? 1,
+    );
+    const price = transferPrice(transfer, ctx.party);
+    const arrives = at + transfer.duration_minutes;
+    if (
+      !best ||
+      price < best.price ||
+      (price === best.price && arrives < best.at + best.transfer.duration_minutes)
+    ) {
+      best = { transfer, day, at, price };
+    }
+  }
+  // Plans only join cities that a link in destinations.json connects, and a link lists at least one transfer.
+  return best!;
+}
+
+/**
+ * The cheapest package. On a tie: fewer cities (less packing and moving for a family), then the one that reaches its
+ * first hotel sooner after the flight, then the plan listed first, so results repeat.
+ */
+function best(packages: PlanPackage[]): PlanPackage {
+  return packages.reduce((winner, p) => {
+    const order =
+      p.total - winner.total ||
+      p.stops.length - winner.stops.length ||
+      p.reachesFirstHotel - winner.reachesFirstHotel;
+    return order < 0 ? p : winner;
+  });
 }
 
 /** The package in the shared trip format, items in journey order. */
-function writeTrip(p: CityPackage, ctx: Context): PlannedTrip {
+function writeTrip(p: PlanPackage, ctx: Context): PlannedTrip {
   const { request, party } = ctx;
+  const first = p.stops[0]!;
+  const last = p.stops.at(-1)!;
+  const arrival = first.arrival!;
+  const departure = last.departure!;
   const items = [
-    flightItem(p.arrival.flight, p.city, ctx),
-    transferItem(p.arrival.transfer, p.city, ctx.start, p.arrival.at, ctx),
-    hotelItem(p.stay, p.city, ctx),
-    ...p.visits.map((visit) => attractionItem(visit, p.city, ctx)),
-    transferItem(p.departure.transfer, p.city, ctx.lastDay, p.departure.at, ctx),
-    flightItem(p.departure.flight, ctx.departureCity, ctx),
+    flightItem(arrival.flight, first.segment.city, ctx),
+    transferItem(arrival.transfer, first.segment.city, ctx.start, arrival.at, ctx),
+    ...p.stops.flatMap((stop, i) => {
+      const hop = i > 0 ? p.hops[i - 1]! : null;
+      return [
+        // A move between cities belongs to the city it arrives in, as a flight does.
+        ...(hop ? [transferItem(hop.transfer, stop.segment.city, hop.day, hop.at, ctx)] : []),
+        hotelItem(stop.stay, stop.segment),
+        ...p.visits[i]!.map((visit) => attractionItem(visit, stop.segment.city, ctx)),
+      ];
+    }),
+    transferItem(departure.transfer, last.segment.city, ctx.lastDay, departure.at, ctx),
+    flightItem(departure.flight, ctx.departureCity, ctx),
   ].map((item, index) => ({ item_id: `i${index + 1}`, ...item }));
 
   return {
@@ -300,6 +422,10 @@ function writeTrip(p: CityPackage, ctx: Context): PlannedTrip {
     status: 'PLANNED',
     items,
   };
+}
+
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0);
 }
 
 type NewItem = Omit<TripItem, 'item_id'>;
@@ -348,15 +474,15 @@ function transferItem(
   });
 }
 
-/** `start` is the check-in date and `end` the check-out date. */
-function hotelItem(stay: Stay, city: string, ctx: Context): NewItem {
+/** `start` is the check-in date (the city's first night) and `end` the check-out date (the day after its last). */
+function hotelItem(stay: Stay, segment: Segment): NewItem {
   return item({
     type: 'hotel',
     name: `${stay.hotel.name}, ${stay.room.name}`,
-    city,
+    city: segment.city,
     catalog_id: stay.hotel.hotel_id,
-    start: ctx.start,
-    end: ctx.lastDay,
+    start: segment.nights[0]!,
+    end: addDays(segment.nights.at(-1)!, 1),
     room_id: stay.room.room_id,
     quantity: stay.rooms,
     price_inr: stay.price,
@@ -377,12 +503,19 @@ function attractionItem(visit: Visit, city: string, ctx: Context): NewItem {
   });
 }
 
-/** Why no package is possible, from the city that got furthest, in the traveler's words. */
-function explain(results: CityResult[], ctx: Context): NoPackageReason {
+/** Why no package is possible, from the plan that got furthest, in the traveler's words. */
+function explain(results: PlanResult[], ctx: Context): NoPackageReason {
+  const { departureCity, country, travelers, request } = ctx;
+  const minNights = ctx.catalog.destinations.rules.min_nights_per_city;
+  if (results.length === 0) {
+    return {
+      code: 'NO_CITY_PLAN',
+      message: `${request.nights} nights is too short for any city: each city needs at least ${minNights} nights.`,
+    };
+  }
   const failures = results.flatMap((result) => ('failedAt' in result ? [result] : []));
   const stage = STAGES[Math.max(...failures.map((f) => STAGES.indexOf(f.failedAt)))]!;
   const cities = failures.filter((f) => f.failedAt === stage).map((f) => f.city);
-  const { departureCity, country, travelers } = ctx;
   const startDate = formatDate(ctx.start);
   const lastDay = formatDate(ctx.lastDay);
 
@@ -415,11 +548,15 @@ function explain(results: CityResult[], ctx: Context): NoPackageReason {
       const landingAt = flightsIntoCountry(ctx)
         .filter((f) => f.seats_left >= travelers)
         .map((f) => f.to);
+      const why =
+        request.nights < 2 * minNights
+          ? `and ${request.nights} nights is too short for two cities: each needs at least ${minNights}.`
+          : `and no plan of cities for ${request.nights} nights starts in a city served by one and ends in one served by the other.`;
       return {
         code: 'NO_COMMON_CITY',
         message:
           `On ${startDate} flights land only at ${either(landingAt)}, and on ${lastDay} flights back ` +
-          `leave only from ${either(withSeats.map((f) => f.from))}. No city is served by both.`,
+          `leave only from ${either(withSeats.map((f) => f.from))}. No city is served by both, ${why}`,
       };
     }
     case 'room':

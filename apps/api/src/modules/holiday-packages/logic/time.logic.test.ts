@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addDays,
+  departureAtOrAfter,
   earliestInWindow,
   formatDate,
   latestInWindow,
@@ -74,5 +75,29 @@ describe('dates', () => {
 
   it('formats a date for a message', () => {
     expect(formatDate('2027-04-10')).toBe('10 Apr 2027');
+  });
+});
+
+describe('departureAtOrAfter', () => {
+  it('takes the first train at or after 10:00 on a timetable from 06:00, every 30 minutes', () => {
+    expect(departureAtOrAfter(600, '06:00', '21:30', 30)).toBe(600);
+    expect(departureAtOrAfter(610, '06:00', '21:30', 30)).toBe(630);
+  });
+
+  it('counts the timetable from the first departure, not from the hour', () => {
+    expect(departureAtOrAfter(600, '05:45', '23:30', 30)).toBe(615);
+  });
+
+  it('waits for a service that starts later', () => {
+    expect(departureAtOrAfter(600, '12:00', '20:00', 30)).toBe(720);
+  });
+
+  it('takes the last departure when the service stops before the preferred time', () => {
+    expect(departureAtOrAfter(600, '05:00', '08:10', 30)).toBe(480);
+  });
+
+  it('lets a taxi leave at any time inside its hours', () => {
+    expect(departureAtOrAfter(600, '00:00', '24:00', 1)).toBe(600);
+    expect(departureAtOrAfter(600, '05:00', '08:00', 1)).toBe(480);
   });
 });
