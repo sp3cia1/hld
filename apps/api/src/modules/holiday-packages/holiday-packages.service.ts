@@ -3,10 +3,14 @@ import { AppError } from '../../lib/app-error';
 import { runInTransaction } from '../../lib/transaction';
 import { getCatalog } from '../catalog/catalog.loader';
 import { buildPackage } from './logic/builder.logic';
+import { freeTimeIn } from './logic/free-time.logic';
 import { insertPackage, saveTrip } from './holiday-packages.repository';
 import { checkRequest } from './logic/request.logic';
 
-/** Checks the request against the data, builds the package, and saves it unless none is possible. */
+/**
+ * Checks the request against the data, builds the package, and saves it unless none is possible. A package comes
+ * back with the free time on the days it leaves open.
+ */
 export async function createPackage(request: HolidayRequest): Promise<BuildResult> {
   const catalog = getCatalog();
 
@@ -34,5 +38,6 @@ export async function createPackage(request: HolidayRequest): Promise<BuildResul
       totalInr: trip.total_inr,
       leftInr: trip.budget_inr - trip.total_inr,
     },
+    freeTime: freeTimeIn(trip, catalog),
   };
 }

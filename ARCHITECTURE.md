@@ -87,7 +87,8 @@ In v1, each city of the country is one plan, with all the nights. One city alway
 - **What's possible:**
   - An attraction can go on a day if it is in the city, open that weekday (`open_days`), and not on a `closed_dates` date.
   - The visit starts at 09:00, or at opening time if that's later. It must end by `open_until`.
-  - None on the arrival day (optional, left empty) and none on the last day (not allowed).
+  - None on the arrival day (optional, left empty; the package page lists what still fits that day instead, from
+    `logic/free-time.logic.ts`) and none on the last day (not allowed).
 - **How they're picked:**
   - Each full day needs a different attraction, at the lowest total price. That's the **assignment problem**: days × attractions, the cost is the price, and the pair is forbidden where the attraction can't go that day.
   - It's solved exactly with the **Hungarian algorithm** (`logic/attractions.logic.ts`), in O(days² × attractions). A city has at most about 15 attractions, so that's instant.

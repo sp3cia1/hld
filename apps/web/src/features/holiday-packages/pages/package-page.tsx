@@ -28,7 +28,7 @@ export function PackagePage() {
     );
   }
 
-  const { trip, budget, status } = parsed.data;
+  const { trip, budget, status, freeTime } = parsed.data;
   return (
     <div className="space-y-8">
       <div className="space-y-2">
@@ -45,7 +45,7 @@ export function PackagePage() {
         </p>
       )}
       <BudgetSummary budget={budget} />
-      <DayByDay items={trip.items} />
+      <DayByDay items={trip.items} freeTime={freeTime} />
     </div>
   );
 }

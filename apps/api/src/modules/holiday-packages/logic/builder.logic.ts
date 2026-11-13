@@ -1,7 +1,7 @@
 import type { HolidayRequest, NoPackageReason, Trip, TripItem } from '@bh/shared/holiday-package';
 import { key, type Catalog } from '../../catalog/catalog.logic';
 import type { Attraction, Flight, Hotel, Room, Transfer } from '../../catalog/catalog.schemas';
-import { assignCheapest } from './attractions.logic';
+import { assignCheapest, earliestVisit } from './attractions.logic';
 import {
   attractionPrice,
   flightPrice,
@@ -19,8 +19,6 @@ import {
   latestInWindow,
   localDateTime,
   minutesOf,
-  weekdayOf,
-  windowOf,
 } from './time.logic';
 import {
   MIN_MINUTES_AFTER_LANDING,
@@ -247,14 +245,10 @@ function planVisits(city: string, ctx: Context): Visit[] | null {
 
   const options = new Map<string, Visit[]>();
   for (const day of ctx.fullDays) {
-    const weekday = weekdayOf(day);
     const fits = attractions.flatMap((attraction): Visit[] => {
-      if (!attraction.open_days.includes(weekday)) return [];
-      if (attraction.closed_dates?.includes(day)) return [];
-      const [opens, closes] = windowOf(attraction.open_from, attraction.open_until);
-      const start = Math.max(startOfDay, opens);
-      if (start + attraction.visit_minutes > closes) return [];
-      return [{ day, attraction, start, price: attractionPrice(attraction, ctx.party) }];
+      const visit = earliestVisit(attraction, day, startOfDay);
+      const price = attractionPrice(attraction, ctx.party);
+      return visit ? [{ day, attraction, start: visit.start, price }] : [];
     });
     options.set(day, fits);
   }
