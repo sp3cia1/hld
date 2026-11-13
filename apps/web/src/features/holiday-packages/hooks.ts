@@ -1,7 +1,13 @@
 import type { PackageResponse } from '@bh/shared/holiday-package';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { retryUnlessNotFound } from '@/lib/api-client';
-import { createPackage, fetchOptions, fetchPackage, fetchPackageCheck } from './api';
+import {
+  createPackage,
+  fetchOptions,
+  fetchPackage,
+  fetchPackageCheck,
+  fetchPackageExport,
+} from './api';
 
 export function useOptions() {
   // The choices come from the catalog, which never changes while the API runs.
@@ -31,6 +37,11 @@ export function usePackageCheck(id: string) {
     queryFn: () => fetchPackageCheck(id),
     retry: retryUnlessNotFound,
   });
+}
+
+/** Fetches the export on click, never ahead: the file is always the package as it is at that moment. */
+export function useExportPackage() {
+  return useMutation({ mutationFn: fetchPackageExport });
 }
 
 export function useCreatePackage() {

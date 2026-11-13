@@ -6,6 +6,7 @@ import { Loading } from '@/components/states/loading';
 import { Card, CardContent } from '@/components/ui/card';
 import { BudgetSummary } from '@/features/holiday-packages/components/budget-summary';
 import { DayByDay } from '@/features/holiday-packages/components/day-by-day';
+import { ExportButton } from '@/features/holiday-packages/components/export-button';
 import { TripHeading } from '@/features/holiday-packages/components/trip-heading';
 import { ApiError } from '@/lib/api-client';
 import { LookupForm } from '../components/lookup-form';
@@ -30,22 +31,25 @@ export function ReservationPage() {
     return <ErrorState error={reservation.error} onRetry={() => void reservation.refetch()} />;
   }
 
-  const { trip, budget } = reservation.data.data;
+  const { trip, budget, packageId } = reservation.data.data;
   return (
     <div className="space-y-8">
       <Motif kind="stamp" label="Booked" />
       <TripHeading title={`Your holiday in ${trip.country} is booked`} trip={trip} />
       <Card>
-        <CardContent className="space-y-1">
-          <p className="text-sm text-muted-foreground">Reservation number</p>
-          <p className="text-4xl font-extrabold tracking-wider tabular-nums">
-            {reservation.data.data.reference}
-          </p>
-          <p className="text-sm text-muted-foreground">Keep it to open this holiday again.</p>
+        <CardContent className="space-y-4">
+          <div className="space-y-1">
+            <p className="text-sm text-muted-foreground">Reservation number</p>
+            <p className="text-4xl font-extrabold tracking-wider tabular-nums">
+              {reservation.data.data.reference}
+            </p>
+            <p className="text-sm text-muted-foreground">Keep it to open this holiday again.</p>
+          </div>
+          <ExportButton packageId={packageId} />
         </CardContent>
       </Card>
       <BudgetSummary budget={budget} />
-            {/* A booked holiday is read-only, so it offers no free-time suggestions. */}
+      {/* A booked holiday is read-only, so it offers no free-time suggestions. */}
       <DayByDay items={trip.items} freeTime={[]} />
     </div>
   );

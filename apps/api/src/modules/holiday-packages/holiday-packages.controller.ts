@@ -1,7 +1,12 @@
 import { holidayRequestSchema } from '@bh/shared/holiday-package';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { createPackage, getPackage, getPackageCheck } from './holiday-packages.service';
+import {
+  createPackage,
+  exportPackage,
+  getPackage,
+  getPackageCheck,
+} from './holiday-packages.service';
 
 const packageParamsSchema = z.object({ id: z.string().min(1) });
 
@@ -20,4 +25,9 @@ export async function getPackageHandler(req: Request, res: Response) {
 export async function getPackageCheckHandler(req: Request, res: Response) {
   const { id } = packageParamsSchema.parse(req.params);
   res.json({ data: await getPackageCheck(id) });
+}
+
+export async function exportPackageHandler(req: Request, res: Response) {
+  const { id } = packageParamsSchema.parse(req.params);
+  res.json({ data: await exportPackage(id) });
 }
