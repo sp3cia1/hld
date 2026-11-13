@@ -8,13 +8,18 @@ import { ApiError } from '@/lib/api-client';
 import { formatInr } from '@/lib/format';
 import { BudgetSummary } from '../components/budget-summary';
 import { DayByDay } from '../components/day-by-day';
+import { ExportButton } from '../components/export-button';
+import { RulesPanel } from '../components/rules-panel';
 import { TripHeading } from '../components/trip-heading';
 import { usePackage } from '../hooks';
 
 /** Set by the request form when it opens a package it just built. A change clears it. */
 export type PackagePageState = { justBuilt: true } | null;
 
-/** The saved package: total against budget, confirm, then the day-by-day plan. Survives a refresh and a shared link. */
+/**
+ * The saved package: total against budget, the rules it passes, confirm and export, then the day-by-day plan with
+ * its change controls. Survives a refresh and a shared link.
+ */
 export function PackagePage() {
   const { id = '' } = useParams();
   const saved = usePackage(id);
@@ -54,7 +59,9 @@ export function PackagePage() {
         </p>
       )}
       <BudgetSummary budget={budget} />
+      <RulesPanel packageId={packageId} />
       <ConfirmPanel saved={saved.data.data} />
+      <ExportButton packageId={packageId} />
       <DayByDay
         items={trip.items}
         freeTime={freeTime}

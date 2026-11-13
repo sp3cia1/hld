@@ -144,10 +144,20 @@ None found. The profile on 13 Nov showed 0 unreadable records, 0 duplicate IDs a
   reservation page `/reservations/:reference` with the number, budget and day-by-day plan, read-only, with the
   "Booked" stamp; a lookup box on the home page. A wrong number shows "We can't find a reservation with this
   number", with the lookup box to try again.
+- **Rules panel (`GET /api/packages/:id/check`, `rules-panel.tsx`):** the validator's verdict on the saved package,
+  on the package page: "All 12 travel rules pass", which opens to list each rule. A failing rule opens the panel by
+  itself and shows the reason under it. It is its own request, cached under the package, so a change to the package
+  (M6) checks it again. 404 `NOT_FOUND` for an unknown id.
+  - **Export (M5), `GET /api/packages/:id/export`:** one JSON file in the shared trip format, plus `country` and a
+    `room_id` on hotel items. Once confirmed, it is the booked snapshot: `status` `BOOKED` and `booking.reference` on
+    every item. The validator runs first, so a package that breaks a rule is refused (422 `PACKAGE_INVALID`) and never
+    downloads. A "Download as JSON" button on the package page and the reservation page saves it as
+    `holiday-<reservation number>.json`, or `holiday-<package id>.json` before confirm.
 - **Validator (`validator.logic.ts`):** `validateTrip(trip, catalog)` returns every broken §4 rule as
   `{ rule, itemId, message }`, and `checkTrip` adds a pass/fail line per rule for the rules panel. The 12 rules and
   their titles are in `packages/shared/src/trip-check.ts`. Written from the statement, not the builder, and imports
   none of the builder's helpers, so it is a real second check. It already covers city changes (one link transfer on its timetable; a visit that day needs the station taxi), ready for the builder's several cities.
+
 ## Cut
 
 - **Station taxis in the first package.** The FAQ says they aren't needed. They're added only when the traveler adds a visit on a change day.

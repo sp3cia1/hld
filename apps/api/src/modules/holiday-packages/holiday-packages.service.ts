@@ -1,12 +1,15 @@
 import type { BuildResult, HolidayRequest, SavedPackage, Trip } from '@bh/shared/holiday-package';
+import type { TripCheck } from '@bh/shared/trip-check';
 import { AppError } from '../../lib/app-error';
 import { runInTransaction } from '../../lib/transaction';
 import { getCatalog } from '../catalog/catalog.loader';
+import { findReservationByPackage } from '../reservations/reservations.repository';
 import { findPackage, insertPackage, saveTrip } from './holiday-packages.repository';
 import { budgetOf } from './logic/budget.logic';
 import { buildPackage } from './logic/builder.logic';
 import { freeTimeIn } from './logic/free-time.logic';
 import { checkRequest } from './logic/request.logic';
+import { checkTrip, validateTrip } from './logic/validator.logic';
 
 /**
  * Checks the request against the data, builds the package, and saves it unless none is possible. A package comes
@@ -38,6 +41,34 @@ export async function getPackage(id: string): Promise<SavedPackage> {
   const saved = await findPackage(id);
   if (!saved) throw new AppError('NOT_FOUND', 404, 'No package has this id');
   return toSavedPackage(saved.trip, saved.reference);
+}
+
+/**
+ * Every travel rule (§4) with whether the saved package passes it, for the rules panel. The validator is separate
+ * from the builder, so this is a second check of what the builder made, and of every change after it.
+ */
+export async function getPackageCheck(id: string): Promise<TripCheck> {
+  const saved = await findPackage(id);
+  if (!saved) throw new AppError('NOT_FOUND', 404, 'No package has this id');
+  return checkTrip(saved.trip, getCatalog());
+}
+
+/**
+ * The package for the JSON export, in the shared trip format. Once confirmed it is the booked snapshot, so the file
+ * matches the reservation. Checked by the validator first: a package that breaks a rule is never exported.
+ */
+export async function exportPackage(id: string): Promise<Trip> {
+  const saved = await findPackage(id);
+  if (!saved) throw new AppError('NOT_FOUND', 404, 'No package has this id');
+
+  const reservation = saved.reference ? await findReservationByPackage(id) : null;
+  const trip = reservation?.trip ?? saved.trip;
+
+  const problems = validateTrip(trip, getCatalog());
+  if (problems.length > 0) {
+    throw new AppError('PACKAGE_INVALID', 422, 'This package breaks a travel rule', { problems });
+  }
+  return trip;
 }
 
 /**
