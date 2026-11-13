@@ -21,9 +21,10 @@ customer almost nothing, while a thinner design would have changed every screen.
 
 ## Start here
 
-**New feature? Copy `apps/api/src/modules/events` and `apps/web/src/features/events`. When unsure, copy the golden
-slice.** For a booking-style write (idempotency, transaction, inventory), copy `modules/reservations` and
-`features/reservations`. Register the router with one line in `apps/api/src/routes.ts`. Put zod schemas in
+**New feature? Copy the golden slice from the `bh-boilerplate` repo (for us at `../bh-boilerplate/`):
+`apps/api/src/modules/events` and `apps/web/src/features/events`. Copy its patterns, not its events domain.** For a
+booking-style write (idempotency, transaction, inventory), copy `modules/reservations` and `features/reservations`
+from there. Register the router with one line in `apps/api/src/routes.ts`. Put zod schemas in
 `packages/shared/src/<feature>.ts`.
 
 ## Layer rules (API, enforced by ESLint)
@@ -56,20 +57,16 @@ Services run transactions with `runInTransaction` from `lib/transaction.ts` and 
 - **Frontend states:** every data screen handles loading, empty, error with `components/states/*`. Disable submit while pending. Show friendly messages from `lib/error-messages.ts`, never raw errors.
 - **Look and feel:** follow `DESIGN.md`: what each colour, font and shape means, and why. Take colours, fonts and shadows from the tokens and components; never write a hex value or font name in a component.
 - **Logging:** use the pino logger from `lib/logger.ts`. No `console.log`.
-- **Tests:** integration tests use the real test database. `beforeEach(resetDatabase)` and `createEvent()` come from
+- **Tests:** integration tests use the real test database. `beforeEach(resetDatabase)` comes from
   `apps/api/test/helpers.ts`. Test races with `Promise.all`, and prove a new test can fail before trusting it.
 - **Code style:** named exports only. No default exports (config files excepted). No barrel `index.ts`. Small files, one responsibility.
 
-## Data pipeline (`scripts/`)
+## Catalog (`data/`)
 
-`npm run data:profile -- <zip or folder>` writes `data/profile.md`. Read it before designing the schema.
-`npm run data:load [-- <zip or folder>]` loads each file that has `scripts/ingest/mappings/<lowercase file name>.ts`.
-To add a file: copy `mappings/events.ts`, change `schema`, `map`, `key`, `insert`. Use the helpers in `ingest/parse.ts`
-(`moneyMinor`, `instant`, `integer`, `text`) for money and time. Never convert with floats or `new Date(string)`.
-Bad rows go to `data/rejects/`, never crash the load. Do not raise `CHUNK_SIZE` (memory, see `ingest/load.ts`).
-**Bad data:** never invent a value. Repair only when the data proves the correct one, always through the `repair` argument of
-`map` (it logs row, field, old value, new value and reason to `data/repairs/`). Reject the rest with a reason. Be able to report
-repaired and rejected counts per kind of problem, and what each choice costs the customer.
+The catalog is read from `data/raw/hackathon-problem-1-holiday-package/data/catalog/` into memory at startup. Never
+change those files: the judges use the originals. Postgres keeps only packages and reservations. `DATA_DICTIONARY.md`
+(next to the catalog) explains every field; `PROBLEM.md` ("What the data shows") has the facts and edge cases. Never
+hard-code a value from the data: derive it, so the app works on any dataset of the same shape.
 
 ## Build order: walking skeleton first
 
@@ -104,7 +101,7 @@ reached, not only the answer, so it adapts: a number like a page size belongs in
 ## Commands
 
 `npm run setup` (once) | `npm run dev` | `npm run check` (typecheck + lint + tests) | `npm run db:reset` |
-`npm run data:profile -- <zip-or-folder>` | `npm run data:load` | `npm run format`
+`npm run format`
 
 `npm run db:reset` and the tests may wipe the local databases without asking (both carry consent for Prisma's AI guard).
 Never run raw Prisma reset commands: any other destructive Prisma command still needs the user's yes.
@@ -114,7 +111,7 @@ Never run raw Prisma reset commands: any other destructive Prisma command still 
 - `npm run check` passes.
 - Loading, empty and error states are handled.
 - The demo path in `docs/DEMO.md` still works.
-- If a decision was settled or what is built changed, `docs/SOLUTION.md` says so. Never put solutions in `docs/PROBLEM.md`.
+- If a decision was settled or what is built changed, `docs/SOLUTION.md` says so. Never put solutions in `PROBLEM.md`.
 - End with a short summary: what changed, files touched, decisions made.
 
 ## Git
@@ -123,4 +120,4 @@ Small commits with clear messages. Never force-push or rewrite history. Never ma
 
 ## More detail
 
-`ARCHITECTURE.md` (layers, diagrams, scaling) | `DESIGN.md` (look and feel) | `docs/decisions/` | `docs/TASK_TEMPLATE.md` | `docs/PROBLEM.md` | `docs/SOLUTION.md` | `docs/DEMO.md` | `docs/IDEAS.md`
+`README.md` | `DESIGN.md` (look and feel) | `docs/decisions/` | `docs/TASK_TEMPLATE.md` | `PROBLEM.md` | `docs/SOLUTION.md` | `docs/DEMO.md` | `docs/IDEAS.md`

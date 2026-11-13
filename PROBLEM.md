@@ -274,11 +274,11 @@ Source: `problem-statement/Intern Hackathon - Problem 1_ Holiday Package - Build
 | Room fit | k rooms fit if adults ≤ k × `max_adults`, adults + children ≤ k × (`max_adults` + `max_children`), and adults ≥ k. Example: 2 adults + 1 child fit 2 `TWIN` or 1 `FAMILY` | §4, dictionary §3 |
 | Rooms left | `rooms_left` ≥ k on every night of the stay | §4 |
 | Attractions | In the city of that night's hotel, open that weekday (`open_days`), date not in `closed_dates`, and the whole visit (start to start + `visit_minutes`) inside the opening hours. Visits on the same day don't overlap. Each attraction appears at most once | §4 |
-| Attractions per day | The first package has 1–2 on every full day. On the arrival day and city-change days they are optional and start after the traveler reaches the city. None on the last day | §4 |
+| Attractions per day | The first package has 1–2 on every full day. After a change, every full day still has at least 1, with no upper limit, and visits still don't overlap. On the arrival day and city-change days they are optional and start after the traveler reaches the **hotel**. None on the last day | §4, mentor answers |
 | Prices | Flight: `price_per_seat` × travelers (children pay the same). Hotel: `price_per_night` × rooms × nights. Transfer `PER_PERSON`: adults × `price` + children × `child_price` (or `price` if there is none). Transfer `PER_VEHICLE`: `price` × ⌈travelers ÷ `max_passengers`⌉. Attraction: adults × `price_per_person` + children × `child_price` (or `price_per_person` if there is none). Total = sum of all parts | §4, dictionary FAQ |
 | Money | All INR, whole rupees. Judges accept up to 1% difference per price | §4 |
 | Child | Anyone aged 0 to 17 | §4 |
-| Budget | Show the total, the budget and the amount left or over. The package need not be the cheapest, but must be within budget when possible. When none fits: say so, show the cheapest total, suggest a change | M5, M8, FAQ |
+| Budget | Show the total, the budget and the amount left or over. The package need not be the cheapest, but must be within budget when possible. When none fits: say so, show the cheapest total, suggest a change. A total equal to the budget is within budget. A package over budget is not refused: it is shown with a label | M5, M8, FAQ, mentor answers |
 | No package | Say so, and say why | M2, §8 |
 | Changes | Change the hotel in a city, change a flight, add or remove attractions. Then check the whole package again and update the total, or refuse the change with a reason | M6 |
 | Confirm | A unique 10-digit reservation number that opens a summary of the whole package, also after a backend restart. A wrong number shows "not found". No payment, and the data files don't change | M7, FAQ |
@@ -296,7 +296,11 @@ Source: `problem-statement/Intern Hackathon - Problem 1_ Holiday Package - Build
 
 | Question | Answer |
 | -------- | ------ |
-| None asked yet | Questions go to the help desk or the event chat. The organisers send every answer to all teams |
+| Does "1–2 attractions on every full day" still hold after the traveler adds or removes attractions? | No day may have zero attractions: at least 1 must stay. The traveler can add as many as they want, as long as visits don't overlap (organisers, 13 Nov). Not asked: whether "no day" also covers the arrival day and city-change days, which the statement makes optional |
+| On the arrival day and a city-change day, when has the traveler "reached the city"? | When they reach the hotel (mentor, 13 Nov) |
+| Is a total exactly equal to the budget within budget? | Yes: a ₹3,50,000 total on a ₹3,50,000 budget is within budget (organisers, 13 Nov) |
+| What happens to a package over budget? | Don't simply reject it. Show it with a label saying it is over budget (organisers, 13 Nov) |
+| Trains | The mentor said there are no trains in the dataset (13 Nov). The data disagrees, checked 13 Nov: `transfers.json` has 6 `TRAIN` records (the Shinkansen between every pair of Tokyo, Kyoto and Osaka), and `destinations.json` links all 6 Japan city pairs to them. Not settled with the mentor yet |
 
 ## What the data shows
 
@@ -353,11 +357,8 @@ Questions nobody has settled. List them without answers.
 - What does "suggests a change" mean when nothing fits the budget?
 - What happens when the traveler picks a flight at an airport that does not serve the current first or last city?
 - After a change breaks another part (G1), does the app fix it or warn?
-- Does "1–2 attractions on every full day" still hold after the traveler adds or removes attractions?
-- On the arrival day and a city-change day, when has the traveler "reached the city": at the airport or station, or at the hotel?
 - After a late landing, may the airport pickup fall on the next calendar day?
 - Which departure time is chosen for trains and buses that leave every 30 minutes?
-- Is a total exactly equal to the budget within budget?
 - Must the cheapest and fastest packages (G4) also be within budget?
 - Is a request that breaks a trip rule (2 nights, 11 nights) an invalid value (M1) or a request with no possible package (M2)?
 - What counts as invalid input: a child aged 18 or more, no adults, more travelers than any flight has seats?
