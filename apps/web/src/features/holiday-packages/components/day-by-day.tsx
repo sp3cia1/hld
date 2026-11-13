@@ -1,13 +1,49 @@
 import type { FreeTime, TripItem } from '@bh/shared/holiday-package';
+import { BedDouble, Car, Landmark, Plane, type LucideIcon } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { ChangePanel, type ChangeTarget } from '@/features/package-changes/components/change-panel';
+import { useApplyChange, useChangePending } from '@/features/package-changes/hooks';
+import { getErrorMessage } from '@/lib/error-messages';
 import { formatInr, formatLocalDate } from '@/lib/format';
 import { FreeTimeList } from './free-time-list';
 
+type DayByDayProps = {
+  items: TripItem[];
+  freeTime: FreeTime[];
+  /** Turns on changing the package (M6). Left out for a confirmed holiday, which is read-only. */
+  changes?: DayChanges;
+};
+
+type DayChanges = {
+  packageId: string;
+  /** The holiday's first day and last day: visits go on the days from the first up to the day before the last. */
+  startDate: string;
+  endDate: string;
+  /** Called after a change to the package is saved. */
+  onChanged: () => void;
+};
+
 /**
- * The package day by day (M4): each day that has something on it, items in the package's own time order. A day the
- * package leaves free also lists what still fits once the traveler reaches the hotel.
+ * The package day by day (M4): each day that has something on it, items in the package's own time order. With
+ * `changes`, a day the package leaves free also lists what still fits once the traveler reaches the hotel, each hotel
+ * and flight can be changed, and visits added or removed (M6); one change panel is open at a time.
  */
-export function DayByDay({ items, freeTime }: { items: TripItem[]; freeTime: FreeTime[] }) {
+export function DayByDay({ items, freeTime, changes }: DayByDayProps) {
+  const [openItemId, setOpenItemId] = useState<string | null>(null);
+  // No package has the id '', so a read-only plan is never pending.
+  const pending = useChangePending(changes?.packageId ?? '');
+  const arrivalFlightId = items.find((item) => item.type === 'flight')?.item_id;
+
+  function targetOf(item: TripItem): ChangeTarget | null {
+    if (item.type === 'hotel') return { kind: 'hotel', city: item.city };
+    if (item.type === 'flight') {
+      return { kind: 'flight', direction: item.item_id === arrivalFlightId ? 'arrival' : 'return' };
+    }
+    return null;
+  }
+
   return (
     <section className="space-y-4">
       <div className="space-y-1">
@@ -16,16 +52,85 @@ export function DayByDay({ items, freeTime }: { items: TripItem[]; freeTime: Fre
       </div>
       {groupByDay(items).map(({ day, dayItems }) => {
         const free = freeTime.find((f) => f.date === day);
+        const addKey = `visit:${day}`;
+        const adding = openItemId === addKey;
         return (
           <Card key={day}>
             <CardContent className="space-y-4">
               <h3 className="text-lg font-bold">{formatLocalDate(day)}</h3>
               <ul className="divide-y">
-                {dayItems.map((item) => (
-                  <ItemRow key={item.item_id} item={item} />
-                ))}
+                {dayItems.map((item) => {
+                  if (changes && item.type === 'attraction') {
+                    return (
+                      <VisitRow
+                        key={item.item_id}
+                        packageId={changes.packageId}
+                        item={item}
+                        disabled={pending}
+                        onRemoved={changes.onChanged}
+                      />
+                    );
+                  }
+                  const target = changes ? targetOf(item) : null;
+                  const open = openItemId === item.item_id;
+                  return (
+                    <ItemRow
+                      key={item.item_id}
+                      item={item}
+                      action={
+                        target && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            aria-expanded={open}
+                            disabled={pending}
+                            onClick={() => setOpenItemId(open ? null : item.item_id)}
+                          >
+                            Change
+                          </Button>
+                        )
+                      }
+                    >
+                      {changes && open && target && (
+                        <ChangePanel
+                          packageId={changes.packageId}
+                          target={target}
+                          onApplied={changes.onChanged}
+                          onClose={() => setOpenItemId(null)}
+                        />
+                      )}
+                    </ItemRow>
+                  );
+                })}
               </ul>
-              {free && <FreeTimeList freeTime={free} />}
+              {changes && free && (
+                <FreeTimeList
+                  packageId={changes.packageId}
+                  freeTime={free}
+                  onAdded={changes.onChanged}
+                />
+              )}
+              {changes && day >= changes.startDate && day < changes.endDate && (
+                <div className="space-y-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-expanded={adding}
+                    disabled={pending}
+                    onClick={() => setOpenItemId(adding ? null : addKey)}
+                  >
+                    Add a visit
+                  </Button>
+                  {adding && (
+                    <ChangePanel
+                      packageId={changes.packageId}
+                      target={{ kind: 'visit', date: day }}
+                      onApplied={changes.onChanged}
+                      onClose={() => setOpenItemId(null)}
+                    />
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         );
@@ -34,26 +139,106 @@ export function DayByDay({ items, freeTime }: { items: TripItem[]; freeTime: Fre
   );
 }
 
-function ItemRow({ item }: { item: TripItem }) {
+/** A visit, with "Remove". A refusal (the last visit of a full day) shows its reason under the visit. */
+function VisitRow({
+  packageId,
+  item,
+  disabled,
+  onRemoved,
+}: {
+  packageId: string;
+  item: TripItem;
+  disabled: boolean;
+  onRemoved: () => void;
+}) {
+  const remove = useApplyChange(packageId);
+  const refused = remove.data?.data.result === 'REFUSED' ? remove.data.data.problems : null;
   return (
-    <li className="flex gap-4 py-3 first:pt-0 last:pb-0">
-      <p className="w-36 shrink-0 text-sm tabular-nums">{timeLabel(item)}</p>
-      <div className="min-w-0 flex-1 space-y-1">
-        <p className="font-semibold">{item.name}</p>
-        <p className="text-sm text-muted-foreground">{details(item)}</p>
-        {item.warnings.map((warning) => (
-          <p
-            key={warning}
-            className="w-fit rounded-md bg-caution px-2 py-1 text-sm text-caution-foreground"
-          >
-            {warning}
+    <ItemRow
+      item={item}
+      action={
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          onClick={() =>
+            remove.mutate(
+              { type: 'remove_attraction', itemId: item.item_id },
+              { onSuccess: ({ data }) => data.result === 'APPLIED' && onRemoved() },
+            )
+          }
+        >
+          Remove
+        </Button>
+      }
+    >
+      {refused?.map((problem) => (
+        <p key={problem.message} role="alert" className="text-sm font-semibold text-destructive">
+          {problem.message}
+        </p>
+      ))}
+      {remove.isError && (
+        <p role="alert" className="text-sm font-semibold text-destructive">
+          {getErrorMessage(remove.error)}
+        </p>
+      )}
+    </ItemRow>
+  );
+}
+
+function ItemRow({
+  item,
+  action,
+  children,
+}: {
+  item: TripItem;
+  action: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <li className="space-y-4 py-3 first:pt-0 last:pb-0">
+      <div className="flex gap-4">
+        <p className="w-36 shrink-0 text-sm tabular-nums">{timeLabel(item)}</p>
+        <div className="min-w-0 flex-1 space-y-1">
+          <KindLabel type={item.type} />
+          <p className="font-semibold">{item.name}</p>
+          <p className="text-sm text-muted-foreground">{details(item)}</p>
+          {item.warnings.map((warning) => (
+            <p
+              key={warning}
+              className="w-fit rounded-md bg-caution px-2 py-1 text-sm text-caution-foreground"
+            >
+              {warning}
+            </p>
+          ))}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <p className="font-semibold tabular-nums">
+            {item.price_inr === 0 ? 'Free' : formatInr(item.price_inr)}
           </p>
-        ))}
+          {action}
+        </div>
       </div>
-      <p className="shrink-0 font-semibold tabular-nums">
-        {item.price_inr === 0 ? 'Free' : formatInr(item.price_inr)}
-      </p>
+      {children}
     </li>
+  );
+}
+
+const KINDS: Record<TripItem['type'], { label: string; Icon: LucideIcon }> = {
+  flight: { label: 'Flight', Icon: Plane },
+  transfer: { label: 'Transfer', Icon: Car },
+  hotel: { label: 'Hotel', Icon: BedDouble },
+  attraction: { label: 'Visit', Icon: Landmark },
+};
+
+/** What kind of item this is, so a day's list can be scanned at a glance. */
+function KindLabel({ type }: { type: TripItem['type'] }) {
+  const { label, Icon } = KINDS[type];
+  return (
+    <p className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">
+      <Icon aria-hidden className="size-4" />
+      {label}
+    </p>
   );
 }
 

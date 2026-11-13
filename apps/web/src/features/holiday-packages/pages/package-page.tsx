@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { Empty } from '@/components/states/empty';
 import { ErrorState } from '@/components/states/error-state';
 import { Loading } from '@/components/states/loading';
@@ -11,10 +11,17 @@ import { DayByDay } from '../components/day-by-day';
 import { TripHeading } from '../components/trip-heading';
 import { usePackage } from '../hooks';
 
+/** Set by the request form when it opens a package it just built. A change clears it. */
+export type PackagePageState = { justBuilt: true } | null;
+
 /** The saved package: total against budget, confirm, then the day-by-day plan. Survives a refresh and a shared link. */
 export function PackagePage() {
   const { id = '' } = useParams();
   const saved = usePackage(id);
+  const navigate = useNavigate();
+  // "No package fits your budget" is known only for a package as the builder made it: a change can take a package
+  // that fits over the budget. The flag lives in the history entry, so it survives a refresh too.
+  const justBuilt = (useLocation().state as PackagePageState)?.justBuilt === true;
 
   if (saved.isPending) return <Loading label="Opening your holiday…" />;
   if (saved.isError) {
@@ -34,19 +41,35 @@ export function PackagePage() {
     return <ErrorState error={saved.error} onRetry={() => void saved.refetch()} />;
   }
 
-  const { trip, budget, status, freeTime } = saved.data.data;
+  const { packageId, trip, budget, status, freeTime, reference } = saved.data.data;
   return (
     <div className="space-y-8">
       <TripHeading title={`Your holiday in ${trip.country}`} trip={trip} />
       {status === 'OVER_BUDGET' && (
         <p role="status" className="rounded-xl bg-caution p-4 text-caution-foreground">
-          No package fits your budget of {formatInr(budget.budgetInr)}. This is the cheapest one we
-          can build. A budget of {formatInr(budget.totalInr)} would cover it.
+          {justBuilt
+            ? `No package fits your budget of ${formatInr(budget.budgetInr)}. This is the cheapest one we can build.`
+            : `This holiday is over your budget of ${formatInr(budget.budgetInr)}.`}{' '}
+          A budget of {formatInr(budget.totalInr)} would cover it.
         </p>
       )}
-      <BudgetSummary budget={budget} />      <BudgetSummary budget={budget} />
+      <BudgetSummary budget={budget} />
       <ConfirmPanel saved={saved.data.data} />
-      <DayByDay items={trip.items} freeTime={freeTime} />
+      <DayByDay
+        items={trip.items}
+        freeTime={freeTime}
+        // A confirmed holiday can't be changed (409 PACKAGE_CONFIRMED), so it shows no change controls.
+        changes={
+          reference === null
+            ? {
+                packageId,
+                startDate: trip.start_date,
+                endDate: trip.end_date,
+                onChanged: () => void navigate('.', { replace: true, state: null }),
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

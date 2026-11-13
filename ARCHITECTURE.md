@@ -199,3 +199,91 @@ The same 864-request run, with 2 adults and 1 child and no budget limit, against
 - **16 still don't, all 3-night trips.** Three nights is too short for two cities.
 - **345 packages use two or three cities.**
 - **284 are cheaper than one city.** The median saving is ₹5,530 in Japan and ₹10,099 in the UAE.
+
+## Changing a package (M6)
+
+The traveler changes one part at a time: the hotel of one city, the arrival flight or the return flight. Every change
+runs one path, in `apps/api/src/modules/package-changes`:
+
+```
+POST /api/packages/:id/changes   { type: 'hotel', city, hotelId, roomId } | { type: 'flight', direction, flightId }
+   │
+   ▼
+service: load the trip and its updatedAt → 409 PACKAGE_CONFIRMED if it has a reservation → 400 if it can't be tried (checkChange)
+   │
+   ▼
+tryChange (pure, change.logic.ts), on a copy:
+   1. swap the one item, written as the builder writes it (logic/trip-items.logic.ts); it keeps its item_id and place
+   2. a flight: any `flights` problem the validator finds on it (airport, day, home) → REFUSED now
+   3. pick again the airport transfers the item affects, with the builder's own functions (logic/airport-transfers.logic.ts)
+        the first city's hotel, or the arrival flight → the transfer from the airport
+        the last city's hotel, or the return flight   → the transfer to the airport (a one-city trip: both)
+      none runs then → REFUSED: "No airport transfer from NRT reaches Asakusa after the 22:50 landing"
+   4. total_inr = the sum of the items, then validateTrip on the whole package → any problem: REFUSED
+   │
+   ▼
+service: save only if updatedAt is unchanged (else 409 PACKAGE_CHANGED) → APPLIED, with the package as GET returns it
+```
+
+- **What the app repairs:** only the airport transfers. The app decides how and when, never what (decision record
+  0011, outside the repo): flights, hotels, visits, the cities and the moves between cities are never touched.
+- **Why the total is set before the validator runs:** the validator's prices rule checks that `total_inr` is the sum
+  of the items, so the copy's total must already be right.
+- **Over budget never refuses a change.** `toSavedPackage` labels the result `OVER_BUDGET` when the total is above
+  the budget, for a built, a loaded or a changed package alike.
+- **REFUSED is a 200,** like `NO_PACKAGE`: a valid answer to a valid request. A change needs no `Idempotency-Key`,
+  because it sets a value ("this hotel"): sending it twice gives the same package.
+
+### Adding and removing visits
+
+The traveler picks the attraction and the day; the app picks the start time and, when needed, the taxi from the
+station (0011). Both run through `tryChange`, so the validator checks the whole package as for hotels and flights.
+
+- **`add_attraction`** `{ date, attractionId }`, on any day from the start date up to the day before the last (400
+  otherwise):
+  1. Refused at once, in the traveler's words, when the attraction is in another city than that night's hotel, is
+     already in the plan, or is closed that weekday or that date.
+  2. **The day begins** at 09:00 (`VISITS_START_AT`) on a full day, and when the family reaches the hotel on the
+     arrival day and a change day (`arrivalsIn` in `logic/free-time.logic.ts`, the same times as the free-time list).
+  3. **The start** is the first that fits of: the start of the day, then the end of each visit already that day. It
+     must be inside the opening hours with the whole visit (`earliestVisit` in `logic/attractions.logic.ts`) and clear
+     of every other visit. None fits: "No time left on 11 Apr 2027: Tokyo Disneyland needs 480 minutes before it
+     closes at 21:00".
+  4. **On a change day by train or bus** with no station taxi yet, the city's `CITY_TAXI` goes in right after the
+     train, picked up at the earliest time at or after the train arrives.
+  5. The visit goes in journey order: after the day's transfers and hotel, among that day's visits by start time. New
+     items take the next unused id (`i11`, `i12`…); no other item is renumbered.
+- **`remove_attraction`** `{ itemId }`: the last visit of a full day is refused ("Every full day keeps at least one
+  visit: add another first, then remove this one"). The last visit of a change day takes the station taxi with it.
+- **Choices for a day** (`GET …/choices/attraction?date=…`): every attraction of that night's city, each previewed
+  with a dry run (READY with its start time, or BLOCKED with the reason). The country's other cities are counted in
+  `hidden`.
+
+Example, Menon on Sun 11 Apr (Senso-ji 09:00–10:00): teamLab Planets starts at 10:00, for +₹5,096 (2 × ₹2,128 + ₹840).
+Tsukiji Outer Market is blocked, "closed on Sundays". Delhi, 1 Apr, 5 nights, on the 3 Apr move to Osaka (Shinkansen
+arrives 12:30): a visit adds the Osaka taxi from the station at 12:30 (₹1,232) and starts at 12:50.
+
+### The choice lists and the dry run
+
+`GET /api/packages/:id/choices/hotel?city=…` and `GET /api/packages/:id/choices/flight?direction=arrival|return`
+(`choices.logic.ts`) list what the traveler can pick (decision record 0013, outside the repo):
+
+- **Hidden, and counted:** only what can never work for this party on these dates. A room type that no number of rooms
+  fits (the room-fit rule finds no `k`), and a flight with fewer seats left than travelers.
+- **Listed:** everything else. For a hotel, every room type of every hotel in that city, for that city's nights. For a
+  flight, every flight from home that lands on the start date (or flies home on the last day) at any airport of the
+  country, not only those serving the current first or last city.
+- **Each preview is a dry run:** `tryChange` without the save, the very function POST runs. READY carries the new
+  total and the difference; BLOCKED the first problem's message. A preview can't disagree with the result, because it
+  is the result. One validator pass per choice: Menon's 31 Tokyo hotel previews take 0.6 ms in all.
+- **Order:** the current choice, then READY by difference, then BLOCKED. Ties keep the catalog's order.
+
+Worked example, Menon (`FL-401` lands at `NRT` at 10:30, Ueno Garden Inn, the Narita bus to Ueno):
+
+| Choice                           | Preview        | Why                                                                                                                       |
+| -------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `FL-405`, lands at `NRT` 21:30   | READY, +₹4,620 | ₹3,780 less for 3 seats, but the pickup can't be before 22:30 and the bus to Ueno stops at 22:00, so the taxi: +₹8,400    |
+| `FL-740`, lands at `KIX`         | BLOCKED        | "KIX doesn't serve Tokyo, the first city"                                                                                 |
+| `FL-403`                         | hidden         | 2 seats left for 3 travelers                                                                                              |
+| Asakusa River Hotel, Family Room | READY, +₹5,712 | The room costs ₹5,712 more. Both airport transfers are picked again for Asakusa, and those buses cost the same as to Ueno |
+| Ginza Pearl Hotel, Family Room   | BLOCKED        | "Only 0 Family Room left on the night of 2027-04-12, and 1 are needed"                                                    |

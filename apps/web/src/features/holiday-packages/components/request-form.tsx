@@ -2,14 +2,16 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import type { Options } from '@bh/shared/options';
 import { Plus, X } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useFieldArray, useForm, type FieldPath } from 'react-hook-form';
+import { Controller, useFieldArray, useForm, type FieldPath } from 'react-hook-form';
 import { useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { getErrorMessage, getFieldErrors } from '@/lib/error-messages';
+import { groupRupees } from '@/lib/format';
 import { useCreatePackage } from '../hooks';
+import type { PackagePageState } from '../pages/package-page';
 import {
   requestFormSchema,
   toFormPath,
@@ -26,7 +28,14 @@ export function RequestForm({ options }: { options: Options }) {
   const create = useCreatePackage();
   const form = useForm<RequestFormValues>({
     resolver: zodResolver(requestFormSchema),
-    defaultValues: { departureAirport: '', country: '', startDate: '', adults: 1, children: [] },
+    // The date picker opens on the month of the value, so start it on the first day the data covers (April 2027).
+    defaultValues: {
+      departureAirport: '',
+      country: '',
+      startDate: options.dataWindow.firstNight,
+      adults: 1,
+      children: [],
+    },
   });
   const children = useFieldArray({ control: form.control, name: 'children' });
   const { errors } = form.formState;
@@ -34,7 +43,9 @@ export function RequestForm({ options }: { options: Options }) {
   function onSubmit(values: RequestFormValues) {
     create.mutate(toHolidayRequest(values), {
       onSuccess: ({ data }) => {
-        if (data.status !== 'NO_PACKAGE') void navigate(`/packages/${data.packageId}`);
+        if (data.status === 'NO_PACKAGE') return;
+        const state: PackagePageState = { justBuilt: true };
+        void navigate(`/packages/${data.packageId}`, { state });
       },
       onError: (error) => {
         // The API checks values against the data (nights, dates). Its messages go on their fields.
@@ -80,6 +91,8 @@ export function RequestForm({ options }: { options: Options }) {
           <Input
             id="startDate"
             type="date"
+            min={options.dataWindow.firstNight}
+            max={options.dataWindow.lastDeparture}
             aria-invalid={!!errors.startDate}
             {...form.register('startDate')}
           />
@@ -105,14 +118,32 @@ export function RequestForm({ options }: { options: Options }) {
           />
         </Field>
         <Field id="budgetInr" label="Budget in ₹" error={errors.budgetInr?.message}>
-          <Input
-            id="budgetInr"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            step={1}
-            aria-invalid={!!errors.budgetInr}
-            {...form.register('budgetInr', { valueAsNumber: true })}
+          {/* A text box, not type="number": a number box can't show the commas. The value stays a number. */}
+          <Controller
+            control={form.control}
+            name="budgetInr"
+            render={({ field }) => (
+              <Input
+                id="budgetInr"
+                name={field.name}
+                ref={field.ref}
+                inputMode="numeric"
+                autoComplete="off"
+                aria-invalid={!!errors.budgetInr}
+                // Untouched, the value is undefined; a cleared box is NaN. Both show empty.
+                value={
+                  typeof field.value === 'number' && !Number.isNaN(field.value)
+                    ? groupRupees(field.value)
+                    : ''
+                }
+                onBlur={field.onBlur}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '');
+                  // Empty becomes NaN, which the schema reports as "Enter a budget".
+                  field.onChange(digits === '' ? Number.NaN : Number(digits));
+                }}
+              />
+            )}
           />
         </Field>
       </div>

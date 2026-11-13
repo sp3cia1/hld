@@ -20,6 +20,11 @@ export function toMinorUnits(amount: number, currency: string): number {
   return Math.round(amount * 10 ** fractionDigits(currency));
 }
 
+/** Groups whole rupees the Indian way, without the ₹ sign, for an input: 122344 becomes "1,22,344". */
+export function groupRupees(rupees: number): string {
+  return new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 0 }).format(rupees);
+}
+
 /** Formats whole rupees, the unit of the trip format (it has no paise): 219324 becomes "₹2,19,324". */
 export function formatInr(rupees: number): string {
   return new Intl.NumberFormat(LOCALE, {
@@ -39,6 +44,12 @@ export function formatLocalDate(local: string): string {
     year: 'numeric',
     timeZone: 'UTC',
   }).format(new Date(`${local.slice(0, 10)}T00:00:00Z`));
+}
+
+/** A change in price against the current one: 5712 is "+₹5,712", -1200 is "−₹1,200", 0 is "₹0". */
+export function formatInrDifference(rupees: number): string {
+  if (rupees === 0) return formatInr(0);
+  return `${rupees > 0 ? '+' : '−'}${formatInr(Math.abs(rupees))}`;
 }
 
 /** Minutes as a length of time: 45 is "45 min", 60 is "1 h", 90 is "1 h 30 min". */
